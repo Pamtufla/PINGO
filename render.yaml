@@ -1,0 +1,15 @@
+# Render Blueprint — New → Blueprint → conecta el repo PINGO
+# https://dashboard.render.com/blueprints
+services:
+  - type: web
+    name: pingo-halloween
+    runtime: java
+    plan: free
+    buildCommand: chmod +x ./mvnw && ./mvnw -DskipTests package
+    startCommand: java -jar target/app-0.0.1-SNAPSHOT.jar
+    healthCheckPath: /
+    envVars:
+      - key: JAVA_VERSION
+        value: "17"
+      # Multiplayer online ya va en static/js/config.js (Supabase URL + anon).
+      # Spring usa H2 en memoria por defecto (no hace falta password de Postgres).
