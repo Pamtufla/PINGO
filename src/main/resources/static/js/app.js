@@ -811,6 +811,37 @@ async function leaveRoom(){
   goHome();
 }
 
+/* ===== CRÉDITOS / CHANGELOG ===== */
+function openAbout(){
+  const about=window.PINGO_ABOUT;
+  if(!about){toast('No se cargó changelog.js');return}
+  $('#aboutVersion').textContent=about.app+' · build '+about.version+' · '+about.year;
+  const credits=$('#creditsList'); credits.innerHTML='';
+  (about.credits||[]).forEach(c=>{
+    const li=document.createElement('li');
+    li.innerHTML='<span class="role">'+escapeHtml(c.role)+'</span><span class="name">'+escapeHtml(c.name)+'</span>';
+    credits.append(li);
+  });
+  const log=$('#changelogList'); log.innerHTML='';
+  (about.changelog||[]).forEach(c=>{
+    const li=document.createElement('li');
+    li.innerHTML=
+      '<span class="hash">'+escapeHtml(c.hash)+'</span>'+
+      '<span class="meta">'+escapeHtml(c.date)+' · '+escapeHtml(c.author)+'</span>'+
+      '<span class="msg">'+escapeHtml(c.msg)+'</span>';
+    log.append(li);
+  });
+  showAboutTab('credits');
+  show('about');
+}
+function showAboutTab(tab){
+  const credits=tab==='credits';
+  $('#tabCredits').classList.toggle('on',credits);
+  $('#tabChangelog').classList.toggle('on',!credits);
+  $('#aboutCredits').style.display=credits?'':'none';
+  $('#aboutChangelog').style.display=credits?'none':'';
+}
+
 /* ===== EVENTOS ===== */
 document.title=CONFIG.APP_NAME;
 $('#sizes').append(sizePicker(pick,n=>pick=n));
@@ -821,7 +852,11 @@ $('#goPlay').onclick=()=>{
   else {show('name');$('#nameIn').focus()}
 };
 $('#goHistory').onclick=()=>openHistory();
+$('#goAbout').onclick=()=>openAbout();
 $('#goTutorial').onclick=()=>openTutorial(false);
+$('#tabCredits').onclick=()=>showAboutTab('credits');
+$('#tabChangelog').onclick=()=>showAboutTab('changelog');
+$('#aboutBack').onclick=goHome;
 $('#tutNext').onclick=nextTutorial;
 $('#tutSkip').onclick=skipTutorial;
 $('#tabTop').onclick=()=>{histTab='top';$('#tabTop').classList.add('on');$('#tabMatches').classList.remove('on');renderHistory()};

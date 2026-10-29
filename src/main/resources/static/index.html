@@ -37,6 +37,7 @@
     <button class="btn pulse" id="goPlay">JUGAR</button>
     <button class="btn ghost" id="goHistory" style="margin-top:8px">HISTÓRICO / RANKING</button>
     <button class="btn ghost" id="goTutorial" style="margin-top:8px">¿CÓMO SE JUEGA?</button>
+    <button class="btn ghost" id="goAbout" style="margin-top:8px">CRÉDITOS / CHANGELOG</button>
     <p class="tiny" id="onlineHint">Sin cuentas. Solo nombre y mala fe.</p>
   </div>
 </main>
@@ -173,6 +174,28 @@
   </div>
 </main>
 
+<!-- PANTALLA: CRÉDITOS / CHANGELOG -->
+<main id="about" class="screen">
+  <div class="wrap stack">
+    <h2>CRÉDITOS</h2>
+    <p class="or" id="aboutVersion"></p>
+    <div class="hist-tabs" role="tablist">
+      <button type="button" class="hist-tab on" id="tabCredits">CRÉDITOS</button>
+      <button type="button" class="hist-tab" id="tabChangelog">CHANGELOG</button>
+    </div>
+    <div class="rank-panel about-panel" id="aboutCredits">
+      <h3>EQUIPO</h3>
+      <ul id="creditsList" class="about-list"></ul>
+    </div>
+    <div class="rank-panel about-panel" id="aboutChangelog" style="display:none">
+      <h3>COMMITS DEL REPO</h3>
+      <p class="tiny" style="margin:0 0 10px;text-align:center">Si ves esta lista, la app cargó bien.</p>
+      <ol id="changelogList" class="about-list changelog-list"></ol>
+    </div>
+    <button class="btn ghost" id="aboutBack">← VOLVER</button>
+  </div>
+</main>
+
 <!-- MODAL / TOAST / FEED -->
 <div id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
   <div class="box">
@@ -189,6 +212,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/js/config.js"></script>
 <script src="/js/multiplayer.js"></script>
+<script src="/js/changelog.js"></script>
 <script src="/js/app.js"></script>
 </body>
 </html>
