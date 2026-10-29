@@ -3,5 +3,7 @@
 .gh{background-image:var(--gh)}.skull{background-image:var(--skull)}.bolt{background-image:var(--bolt)}.bot{background-image:var(--bot)}
 .fl.bot,.fl.gh{width:64px;height:64px}
 .fl.skull{width:36px;height:36px}
-.circ{position:fixed;left:50%;top:50%;width:min(125vw,640px);aspect-ratio:1;margin:calc(min(125vw,640px)/-2) 0 0 calc(min(125vw,640px)/-2);background:var(--circ) center/contain no-repeat;image-rendering:pixelated;opacity:.4;pointer-events:none;z-index:0;animation:spin 40s steps(40) infinite}
+.circ{position:fixed;left:50%;top:50%;width:min(125vw,640px);aspect-ratio:1;margin:calc(min(125vw,640px)/-2) 0 0 calc(min(125vw,640px)/-2);background:var(--circ) center/contain no-repeat;image-rendering:pixelated;opacity:.35;pointer-events:none;z-index:0;animation:spin 28s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width:480px){.circ{opacity:.22;width:min(140vw,520px);margin:calc(min(140vw,520px)/-2) 0 0 calc(min(140vw,520px)/-2)}}
+@media (prefers-reduced-motion:reduce){.circ{animation:none}}

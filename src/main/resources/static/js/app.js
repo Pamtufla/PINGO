@@ -112,7 +112,15 @@ function load(){try{
   const s=JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY));
   if(s&&CONFIG.SIZES[s.size]&&Array.isArray(s.cells)&&s.cells.length===s.size*s.size&&Array.isArray(s.marked)){s.how=s.how||{};return s}
 }catch(e){}return null}
-function show(id){document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on',s.id===id));window.scrollTo(0,0)}
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>{
+    const on=s.id===id;
+    s.classList.toggle('on',on);
+    s.classList.remove('enter');
+    if(on){void s.offsetWidth;s.classList.add('enter')}
+  });
+  window.scrollTo({top:0,behavior:'smooth'});
+}
 let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2200)}
 
 function fullCode(){return CONFIG.CODE_PREFIX+st.size+'-'+st.code}
