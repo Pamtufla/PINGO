@@ -158,7 +158,7 @@ function renderGrid(){
   $('#game').dataset.n=G.N;
   st.cells.forEach((c,i)=>{
     const b=document.createElement('button'); b.type='button'; b.className='cell';
-    if(c===null){b.classList.add('free');b.disabled=true;b.innerHTML='<b>🎃</b>LIBRE';b.setAttribute('aria-label','Casilla libre, ya marcada');}
+    if(c===null){b.classList.add('free');b.disabled=true;b.innerHTML='<b></b>LIBRE';b.setAttribute('aria-label','Casilla libre, ya marcada');}
     else{
       const t=c.t;
       b.textContent=t;b.classList.add(t.length<26?'t1':t.length>44?'t3':'t2');
@@ -187,11 +187,11 @@ function update(){
   });
   const found=st.marked.filter((m,i)=>m&&st.cells[i]!==null).length, pct=Math.round(found/G.NEED*100);
   const rs=retoStats();
-  $('#gTitle').textContent='Pingo de '+st.name+' 🎃';
+  $('#gTitle').textContent='Pingo de '+st.name;
   $('#gCount').textContent=found+' / '+G.NEED+' encontrados';
   $('#gBar').style.width=pct+'%'; $('#gPct').textContent=pct+'%';
-  $('#gReto').textContent='⚡ Retos: '+rs.ok+' cumplidos · '+rs.paid+' pagados'+(rs.paid?' ('+CONFIG.CURRENCY+' '+rs.total+')':'');
-  $('#codeBtn').textContent=fullCode()+' 📋';
+  $('#gReto').textContent='Retos: '+rs.ok+' cumplidos · '+rs.paid+' pagados'+(rs.paid?' ('+CONFIG.CURRENCY+' '+rs.total+')':'');
+  $('#codeBtn').textContent=fullCode();
   return d;
 }
 function toggle(i){
@@ -210,9 +210,9 @@ function setMark(i,on,how){
 function askReto(i){
   const note=document.createElement('p');note.className='note';
   note.textContent='Cúmplelo o paga '+CONFIG.CURRENCY+' '+CONFIG.PENALTY+' para marcarla';
-  modal({emoji:'⚡ 🎃 ⚡',title:'¡RETO!',text:st.cells[i].t,extra:note,
-    btns:[['✅ LO CUMPLÍ','',()=>setMark(i,true,'done')],
-          ['💸 PAGO '+CONFIG.CURRENCY+' '+CONFIG.PENALTY,'pay',()=>setMark(i,true,'paid')],
+  modal({emoji:'bolt pk bolt',title:'¡RETO!',text:st.cells[i].t,extra:note,
+    btns:[['LO CUMPLÍ','',()=>setMark(i,true,'done')],
+          ['$ PAGO '+CONFIG.CURRENCY+' '+CONFIG.PENALTY,'pay',()=>setMark(i,true,'paid')],
           ['CANCELAR','ghost',null]]});
 }
 function mini(set){
@@ -223,12 +223,12 @@ function mini(set){
 function bingo(ls){
   const full=ls.some(l=>l.id==='full'), set=new Set(); ls.forEach(l=>l.c.forEach(i=>set.add(i)));
   confetti();
-  modal({emoji:'🎃 👻 🎃',title:full?'¡CARTILLA!':'¡PINGO!',
+  modal({emoji:'pk gh pk',title:full?'¡CARTILLA!':'¡PINGO!',
     text:(full?'¡TE PASASTE DE MOSTRO! ':'Acabas de completar: '+ls.map(l=>l.name).join(' + ')+'. ')+'¡Encontraste '+(full?G.NEED:G.N)+' cosas de Halloween!',
     extra:full?null:mini(set),btns:[['SEGUIR JUGANDO','',null]]});
 }
 function modal({emoji,title,text,extra,btns}){
-  $('#mEmoji').textContent=emoji||''; $('#mTitle').textContent=title; $('#mText').textContent=text||'';
+  $('#mEmoji').innerHTML=(emoji||'').split(' ').filter(Boolean).map(k=>'<i class="spr '+k+'"></i>').join(''); $('#mTitle').textContent=title; $('#mText').textContent=text||'';
   const x=$('#mExtra');x.innerHTML='';if(extra)x.append(extra);
   const b=$('#mBtns');b.innerHTML='';
   btns.forEach(([l,cls,fn])=>{const e=document.createElement('button');e.className='btn '+cls;e.textContent=l;e.onclick=()=>{$('#modal').classList.remove('on');if(fn)fn()};b.append(e)});
@@ -236,10 +236,10 @@ function modal({emoji,title,text,extra,btns}){
 }
 function confetti(){
   if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
-  const em=['🎃','🦇','👻','🕸️','🌙'],col=['#ff7a1a','#7c3aed','#f6ecd9','#ffb066'];
+  const em=['pk','bat','gh','skull','bolt'],col=['#ff7a1a','#7c3aed','#f6ecd9','#ffb066'];
   for(let i=0;i<46;i++){
     const s=document.createElement('span');s.className='cf';
-    if(i%3===0){s.textContent=em[i%5];s.style.fontSize=(18+Math.random()*14)+'px'}
+    if(i%3===0){s.className='cf spr '+em[i%5];s.style.width=s.style.height=(22+Math.random()*14)+'px';s.style.margin='0'}
     else{s.style.width='9px';s.style.height='14px';s.style.background=col[i%4]}
     s.style.left=Math.random()*100+'vw';s.style.animationDuration=(1.6+Math.random()*1.6)+'s';s.style.animationDelay=Math.random()*.5+'s';
     document.body.append(s);setTimeout(()=>s.remove(),3800);
@@ -256,7 +256,7 @@ function shareText(){
 async function share(){
   const text=shareText();
   if(navigator.share){try{await navigator.share({title:CONFIG.APP_NAME,text});return}catch(e){if(e&&e.name==='AbortError')return}}
-  try{await copy(text);toast('Copiado. Pégalo en el grupo 📋')}catch(e){toast('No se pudo copiar')}
+  try{await copy(text);toast('Copiado. Pégalo en el grupo')}catch(e){toast('No se pudo copiar')}
 }
  
 //* Selector de tamaño
@@ -284,14 +284,14 @@ function hasCard(){return !!(st&&Array.isArray(st.cells)&&st.cells.length)}
 function refreshHome(){
   const b=$('#resume'); if(!b)return;
   b.style.display=hasCard()?'':'none';
-  if(hasCard())b.textContent='▶ CONTINUAR CARTILLA ('+st.size+'×'+st.size+')';
+  if(hasCard())b.textContent='> CONTINUAR CARTILLA ('+st.size+'×'+st.size+')';
 }
 function goHome(){refreshHome();show('home')}
 function resume(){if(!hasCard())return;update();show('game')}
 // Antes de empezar otra cartilla, avisa si ya hay una en curso
 function confirmNew(fn){
   if(!hasCard()){fn();return}
-  modal({emoji:'⚠️',title:'¿OTRA?',text:'Ya tienes una cartilla en curso. Si empiezas otra, perderás la actual.',
+  modal({emoji:'skull',title:'¿OTRA?',text:'Ya tienes una cartilla en curso. Si empiezas otra, perderás la actual.',
     btns:[['CANCELAR','ghost',null],['EMPEZAR OTRA','',fn]]});
 }
 
@@ -309,7 +309,7 @@ $('#share').onclick=share;
 $('#codeBtn').onclick=()=>copy(fullCode()).then(()=>toast('Código copiado')).catch(()=>toast('No se pudo copiar'));
 $('#newCard').onclick=()=>{
   let n=st.size;
-  modal({emoji:'🔄',title:'¿NUEVA?',text:'Elige el tamaño de la nueva calaverita calaverita.',extra:sizePicker(n,v=>n=v),
+  modal({emoji:'gh',title:'¿NUEVA?',text:'Elige el tamaño de la nueva calaverita calaverita.',extra:sizePicker(n,v=>n=v),
     btns:[['CANCELAR','ghost',null],['NUEVA CARTILLA','',()=>restart(n)]]});
 };
 
