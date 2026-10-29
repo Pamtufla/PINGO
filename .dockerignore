@@ -1,0 +1,10 @@
+target/
+.git/
+.cursor/
+.idea/
+.vscode/
+*.iml
+HELP.md
+DEPLOY_RENDER.md
+.env
+.env.*

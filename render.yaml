@@ -1,15 +1,12 @@
-# Render Blueprint — New → Blueprint → conecta el repo PINGO
+# Render Blueprint — Docker
 # https://dashboard.render.com/blueprints
 services:
   - type: web
     name: pingo-halloween
-    runtime: java
+    runtime: docker
     plan: free
-    buildCommand: chmod +x ./mvnw && ./mvnw -DskipTests package
-    startCommand: java -jar target/app-0.0.1-SNAPSHOT.jar
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /
-    envVars:
-      - key: JAVA_VERSION
-        value: "17"
-      # Multiplayer online ya va en static/js/config.js (Supabase URL + anon).
-      # Spring usa H2 en memoria por defecto (no hace falta password de Postgres).
+    # PORT lo asigna Render solo. Multiplayer = Supabase en config.js.
+    # Spring usa H2 por defecto (no hace falta Postgres en Render).
