@@ -111,11 +111,37 @@
     return data;
   }
 
-  async function saveMatchResults(rows) {
+  /** Guarda histórico. En salas solo el primero (anfitrión) gana el candado match_archives. */
+  async function saveMatchResults(rows, meta) {
     if (!init() || !rows || !rows.length) return { ok: false, localOnly: true };
+    const matchId = meta && meta.matchId;
+    if (!matchId) throw new Error('Falta matchId');
+
+    // Candado: 1 fila por match_id → evita duplicados si varios intentan guardar
+    const { error: lockErr } = await sb.from('match_archives').insert({
+      match_id: matchId,
+      room_code: (meta && meta.roomCode) || null,
+      mode: (meta && meta.mode) || 'solo',
+      saved_by: clientId()
+    });
+    if (lockErr) {
+      // 23505 = unique_violation
+      if (lockErr.code === '23505' || /duplicate|unique/i.test(lockErr.message || '')) {
+        return { ok: false, duplicate: true };
+      }
+      throw lockErr;
+    }
+
     const { error } = await sb.from('match_results').insert(rows);
     if (error) throw error;
     return { ok: true };
+  }
+
+  async function isMatchArchived(matchId) {
+    if (!init() || !matchId) return false;
+    const { data, error } = await sb.from('match_archives').select('match_id').eq('match_id', matchId).maybeSingle();
+    if (error) return false;
+    return !!data;
   }
 
   async function fetchLeaderboard(limit) {
@@ -198,7 +224,7 @@
 
   global.PingoMP = {
     enabled, init, clientId, createRoom, joinRoom, fetchPlayers,
-    startRoom, endRoom, saveMatchResults, fetchLeaderboard, getClient,
+    startRoom, endRoom, saveMatchResults, isMatchArchived, fetchLeaderboard, getClient,
     queueSync, syncProgress, leave, isHost, getRoom, getPlayer, setHandlers
   };
 })(window);

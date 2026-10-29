@@ -477,24 +477,40 @@ async function finishMatch(opts){
   const standings=buildStandings();
   const room=PingoMP.getRoom && PingoMP.getRoom();
   const mode=room?'room':'solo';
+  // En sala el match_id es el id de la room (igual para todos) → un solo histórico
   pendingResults={
-    matchId: newMatchId(),
+    matchId: room?room.id:newMatchId(),
     mode,
     roomCode: room?room.code:null,
     size: st?st.size:(G&&G.N)||3,
     standings,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    canSave: mode!=='room' || PingoMP.isHost()
   };
   $('#resultsMeta').textContent=
     (mode==='room'?'Sala '+pendingResults.roomCode+' · ':'Solo · ')+
     pendingResults.size+'×'+pendingResults.size+' · '+
     standings.length+' jugador'+(standings.length===1?'':'es');
   renderResultsList(standings);
-  $('#resultsAsk').style.display='';
-  $('#resultsSave').style.display='';
-  $('#resultsDiscard').style.display='';
+  setupResultsSaveUI(pendingResults);
   show('results');
   confetti();
+}
+function setupResultsSaveUI(pr){
+  const ask=$('#resultsAsk'), save=$('#resultsSave'), discard=$('#resultsDiscard');
+  ask.style.display='';
+  discard.style.display='';
+  if(pr.canSave){
+    ask.textContent = pr.mode==='room'
+      ? '¿Guardar en el histórico? Solo el anfitrión puede hacerlo (una vez).'
+      : '¿Guardar este resultado en el histórico?';
+    save.style.display='';
+    discard.textContent='NO GUARDAR (BORRAR)';
+  }else{
+    ask.textContent='Solo el anfitrión puede guardar el histórico de esta sala.';
+    save.style.display='none';
+    discard.textContent='ENTENDIDO / SALIR';
+  }
 }
 function toResultRows(pr){
   return pr.standings.map((p,i)=>({
@@ -523,25 +539,57 @@ function saveLocalHistory(entry){
 }
 async function savePendingResults(){
   if(!pendingResults){toast('No hay resultado');return}
+  if(pendingResults.mode==='room' && !PingoMP.isHost()){
+    toast('Solo el anfitrión puede guardar');
+    return;
+  }
+  if(busy) return;
+  busy=true;
   const rows=toResultRows(pendingResults);
-  saveLocalHistory({
+  const meta={
     matchId: pendingResults.matchId,
     mode: pendingResults.mode,
-    roomCode: pendingResults.roomCode,
-    size: pendingResults.size,
-    createdAt: pendingResults.createdAt,
-    standings: pendingResults.standings
-  });
-  if(onlineOk()){
-    try{
-      await PingoMP.saveMatchResults(rows);
+    roomCode: pendingResults.roomCode
+  };
+  try{
+    if(onlineOk()){
+      // Si ya está archivada, no insertar de nuevo
+      if(await PingoMP.isMatchArchived(meta.matchId)){
+        toast('Esta partida ya fue guardada');
+        afterResultsDecision();
+        return;
+      }
+      const res=await PingoMP.saveMatchResults(rows, meta);
+      if(res && res.duplicate){
+        toast('Otro jugador ya guardó esta partida');
+        afterResultsDecision();
+        return;
+      }
+      saveLocalHistory({
+        matchId: pendingResults.matchId,
+        mode: pendingResults.mode,
+        roomCode: pendingResults.roomCode,
+        size: pendingResults.size,
+        createdAt: pendingResults.createdAt,
+        standings: pendingResults.standings
+      });
       toast('Guardado en el histórico online');
-    }catch(e){
-      console.error(e);
-      toast('Guardado solo en este dispositivo');
+    }else{
+      saveLocalHistory({
+        matchId: pendingResults.matchId,
+        mode: pendingResults.mode,
+        roomCode: pendingResults.roomCode,
+        size: pendingResults.size,
+        createdAt: pendingResults.createdAt,
+        standings: pendingResults.standings
+      });
+      toast('Guardado en este dispositivo');
     }
-  }else toast('Guardado en este dispositivo');
-  afterResultsDecision();
+    afterResultsDecision();
+  }catch(e){
+    console.error(e);
+    toast(e.message||'No se pudo guardar');
+  }finally{busy=false}
 }
 function discardPendingResults(){
   pendingResults=null;

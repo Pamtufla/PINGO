@@ -110,3 +110,20 @@ create policy match_results_select on public.match_results
   for select to anon, authenticated using (true);
 create policy match_results_insert on public.match_results
   for insert to anon, authenticated with check (true);
+
+-- Candado anti-duplicados: 1 guardado por partida
+create table if not exists public.match_archives (
+  match_id uuid primary key,
+  room_code text,
+  mode text not null check (mode in ('solo','room')),
+  saved_by text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.match_archives enable row level security;
+drop policy if exists match_archives_select on public.match_archives;
+drop policy if exists match_archives_insert on public.match_archives;
+create policy match_archives_select on public.match_archives
+  for select to anon, authenticated using (true);
+create policy match_archives_insert on public.match_archives
+  for insert to anon, authenticated with check (true);
+create index if not exists match_archives_room_code_idx on public.match_archives(room_code);
