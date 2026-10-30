@@ -50,3 +50,6 @@ android/gradle/wrapper/gradle-wrapper.jar
 
 ios/*.xcodeproj/
 ios/DerivedData/
+ios/build/
+ios/*.xcworkspace/
+ios/ExportOptions.ci.plist

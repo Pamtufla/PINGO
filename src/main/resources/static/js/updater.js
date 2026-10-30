@@ -15,7 +15,15 @@
  if(!manual&&!info.force&&localStorage.getItem('pingo-skip-update')===remote.version)return {...info,status:'skipped'};return info;})();try{return await checking;}finally{checking=null;}}
  function skip(ver){localStorage.setItem('pingo-skip-update',ver);}
  function startApkDownload(remote){if(downloading)throw new Error('Ya hay una descarga en curso');if(!localApkVersion()||ios())throw new Error('La instalación APK solo está disponible en Android');const url=apkUrl(remote.apkUrl);if(!/^[a-f0-9]{64}$/i.test(remote.sha256||''))throw new Error('La publicación no incluye una suma SHA-256 válida');if(!g.PingoNative||!g.PingoNative.postMessage)throw new Error('Esta versión requiere instalar manualmente desde el repositorio oficial');downloading=true;g.PingoNative.postMessage(JSON.stringify({url,sha256:remote.sha256}));}
- function openStore(url){const u=new URL(url);if(u.protocol!=='https:'||u.hostname!=='apps.apple.com'||u.username||u.password)throw new Error('Enlace App Store inválido');location.href=u.href;}
+ function openStore(url){const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password)throw new Error('Enlace inválido');if(u.hostname!=='apps.apple.com'&&u.hostname!=='testflight.apple.com'&&u.hostname!=='github.com')throw new Error('Enlace iOS no autorizado');location.href=u.href;}
+ function iosNativeVersion(){const m=navigator.userAgent.match(/PingoIOS\/([\w.+-]+)/);return m?m[1]:null;}
+ function isIosSafari(){return ios()&&!iosNativeVersion()&&!window.navigator.standalone;}
+ function iosInstallHint(remote){
+  if(remote&&remote.testFlightUrl)return {kind:'testflight',url:remote.testFlightUrl,title:'TestFlight'};
+  if(remote&&remote.appStoreUrl)return {kind:'store',url:remote.appStoreUrl,title:'App Store'};
+  if(remote&&remote.iosIpaUrl)return {kind:'ipa',url:remote.iosIpaUrl,title:'Descargar IPA'};
+  return {kind:'safari',url:null,title:'Añadir a pantalla de inicio'};
+ }
  g.addEventListener('pingo-download',e=>{if(e.detail.status==='error'||e.detail.status==='ready')downloading=false;});
- g.PingoUpdater={check,skip,cmpVer,localAppVersion,localApkVersion,startApkDownload,openStore};
+ g.PingoUpdater={check,skip,cmpVer,localAppVersion,localApkVersion,startApkDownload,openStore,ios,iosNativeVersion,isIosSafari,iosInstallHint};
 })(window);

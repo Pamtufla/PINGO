@@ -7,8 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pingo">
 <meta name="format-detection" content="telephone=no">
 <meta name="description" content="Pingo de Halloween — bingo competitivo en tiempo real">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/img/logo.svg">
 <title>Pingo de Halloween</title>
 <style>html,body{overscroll-behavior:none;touch-action:manipulation}</style>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎃</text></svg>">
@@ -40,6 +43,7 @@
     <button class="btn ghost" id="goTutorial" style="margin-top:8px">¿CÓMO SE JUEGA?</button>
     <button class="btn ghost" id="goAbout" style="margin-top:8px">CRÉDITOS / CHANGELOG</button>
     <button class="btn ghost" id="goUpdate" style="margin-top:8px">BUSCAR ACTUALIZACIÓN</button>
+    <button class="btn ghost" id="goInstallIos" style="margin-top:8px;display:none">INSTALAR EN IPHONE</button>
     <button class="btn ghost" id="exportProgress">EXPORTAR COPIA PRIVADA</button>
     <label class="tiny">Restaurar copia <input id="importProgress" type="file" accept="application/json"></label>
     <p class="tiny">La copia permite recuperar tu perfil. Guárdala en privado.</p>

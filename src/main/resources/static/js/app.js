@@ -1067,8 +1067,10 @@ async function checkForUpdates(manual){
       (info.needApk?' · Se descargará el APK.':info.needStore?' · App Store.':' · Puedes recargar el contenido.');
     const btns=[];
     if(info.needStore){
-      if(r.appStoreUrl)btns.push(['ABRIR APP STORE','',()=>{try{PingoUpdater.openStore(r.appStoreUrl)}catch(e){toast(e.message)}}]);
-      else extra.textContent+=' · Falta publicar el enlace oficial de App Store.';
+      const hint=PingoUpdater.iosInstallHint(r);
+      if(hint.kind==='testflight'||hint.kind==='store')btns.push(['ABRIR '+hint.title.toUpperCase(),'',()=>{try{PingoUpdater.openStore(hint.url)}catch(e){toast(e.message)}}]);
+      else if(hint.kind==='ipa')btns.push(['DESCARGAR IPA','',()=>{try{PingoUpdater.openStore(hint.url)}catch(e){toast(e.message)}}]);
+      else extra.textContent+=' · En iPhone usa Safari → Compartir → Añadir a pantalla de inicio, o instala el IPA del Release con AltStore.';
     }else if(info.needApk && r.apkUrl){
       btns.push(['DESCARGAR ACTUALIZACIÓN','',()=>{
         try{PingoUpdater.startApkDownload(r);toast('Descargando y verificando APK…')}catch(e){toast(e.message)}
@@ -1147,6 +1149,18 @@ $('#goPlay').onclick=()=>{
 $('#goHistory').onclick=()=>openHistory();
 $('#goAbout').onclick=()=>openAbout();
 $('#goUpdate').onclick=()=>checkForUpdates(true);
+(function initIosInstall(){
+  const btn=$('#goInstallIos'); if(!btn||!window.PingoUpdater) return;
+  if(PingoUpdater.isIosSafari && PingoUpdater.isIosSafari()){
+    btn.style.display='';
+    btn.onclick=()=>{
+      const extra=document.createElement('ol');
+      extra.className='note';
+      extra.innerHTML='<li>Abre esta página en <b>Safari</b> (no Chrome).</li><li>Toca el botón <b>Compartir</b> (cuadrado con flecha).</li><li>Elige <b>Añadir a pantalla de inicio</b>.</li><li>Confirma <b>Añadir</b>.</li>';
+      modal({emoji:'pk gh pk',title:'INSTALAR EN IPHONE',text:'Así Pingo queda como app sin App Store. Para IPA nativa hace falta firma Apple en el Release.',extra,btns:[['ENTENDIDO','',null]]});
+    };
+  }
+})();
 $('#goTutorial').onclick=()=>openTutorial(false);
 $('#tabCredits').onclick=()=>showAboutTab('credits');
 $('#tabChangelog').onclick=()=>showAboutTab('changelog');

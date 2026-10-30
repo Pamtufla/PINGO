@@ -1,5 +1,5 @@
-# En cada push a main: construye APK, publica GitHub Release y actualiza update.json.
-# Commits con [skip apk] (p. ej. el bot que escribe update.json) no disparan otro ciclo.
+# Push a main: APK (Android) + IPA/app iOS → GitHub Release + update.json
+# Commits con [skip apk] no disparan el ciclo.
 name: Release APK
 
 on:
@@ -15,21 +15,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-release:
+  version:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.head_commit && !contains(github.event.head_commit.message, '[skip apk]')) }}
     runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.ver.outputs.code }}
+      name: ${{ steps.ver.outputs.name }}
+      tag: ${{ steps.ver.outputs.tag }}
+      short: ${{ steps.ver.outputs.short }}
+      notes: ${{ steps.ver.outputs.notes }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set version
-        id: ver
+      - id: ver
         run: |
           CODE="${{ github.run_number }}"
-          # 1.2.<run_number> — alineado con la serie actual
           NAME="1.2.${CODE}"
           SHORT="$(git rev-parse --short HEAD)"
           NOTES="$(git log -1 --pretty=%s)"
@@ -38,118 +39,257 @@ jobs:
           echo "tag=v${NAME}" >> "$GITHUB_OUTPUT"
           echo "short=${SHORT}" >> "$GITHUB_OUTPUT"
           echo "notes=${NOTES}" >> "$GITHUB_OUTPUT"
-          echo "VERSION_CODE=${CODE}" >> "$GITHUB_ENV"
-          echo "VERSION_NAME=${NAME}" >> "$GITHUB_ENV"
-          echo "PINGO_WEB_URL=${PINGO_WEB_URL:-https://pingo-halloween.onrender.com}" >> "$GITHUB_ENV"
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
+  android:
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-
-      # v3 instalaba el paquete legacy "tools" (Google ya no lo sirve).
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
+      - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
-
-      - name: Install Android platform & build-tools
-        run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.9"
-
       - name: Build release APK
         working-directory: android
+        env:
+          VERSION_CODE: ${{ needs.version.outputs.code }}
+          VERSION_NAME: ${{ needs.version.outputs.name }}
+          PINGO_WEB_URL: https://pingo-halloween.onrender.com
         run: gradle assembleRelease --no-daemon
-
       - name: Stage APK
         run: |
           mkdir -p dist
           SRC=$(ls android/app/build/outputs/apk/release/*.apk | head -n1)
           cp "$SRC" dist/pingo.apk
-          cp "$SRC" "dist/pingo-${{ steps.ver.outputs.name }}.apk"
-          ls -la dist/
+          cp "$SRC" "dist/pingo-${{ needs.version.outputs.name }}.apk"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: android-apk
+          path: dist/*.apk
 
+  ios:
+    needs: version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: App icon + version
+        working-directory: ios
+        env:
+          VER: ${{ needs.version.outputs.name }}
+          CODE: ${{ needs.version.outputs.code }}
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          python3 scripts/gen_icon.py
+          # Inject marketing / build into project.yml
+          sed -i '' "s/MARKETING_VERSION: \".*\"/MARKETING_VERSION: \"${VER}\"/" project.yml || \
+            sed -i "s/MARKETING_VERSION: \".*\"/MARKETING_VERSION: \"${VER}\"/" project.yml
+          # CURRENT_PROJECT_VERSION lives only as settings; patch via env for xcodebuild
+          echo "APPLE_TEAM_ID=${TEAM}" >> "$GITHUB_ENV"
+          xcodegen generate
+      - name: Build iOS Simulator app
+        working-directory: ios
+        env:
+          VER: ${{ needs.version.outputs.name }}
+          CODE: ${{ needs.version.outputs.code }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Pingo.xcodeproj \
+            -scheme Pingo \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData \
+            MARKETING_VERSION="${VER}" \
+            CURRENT_PROJECT_VERSION="${CODE}" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          APP=$(find build/DerivedData/Build/Products -name 'Pingo.app' | head -n1)
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist/pingo-ios-simulator-${VER}.zip"
+          ls -la dist/
+      - name: Build signed IPA (optional secrets)
+        id: ipa
+        working-directory: ios
+        env:
+          VER: ${{ needs.version.outputs.name }}
+          CODE: ${{ needs.version.outputs.code }}
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          CERT_P12: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERT_PASS: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TEAM}" ] || [ -z "${CERT_P12}" ] || [ -z "${PROFILE}" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "Sin secretos Apple → solo publicamos el build de simulador. Ver ios/README.md"
+            exit 0
+          fi
+          # Keychain + certificate
+          KEYCHAIN="$RUNNER_TEMP/pingo.keychain-db"
+          PASS="$(openssl rand -base64 24)"
+          security create-keychain -p "$PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASS" "$KEYCHAIN"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "${CERT_PASS}" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$PROFILE" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/pingo.mobileprovision"
+          # Prefer ad-hoc if profile is ad-hoc; otherwise development
+          cat > ExportOptions.ci.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>ad-hoc</string>
+            <key>teamID</key><string>${TEAM}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>compileBitcode</key><false/>
+            <key>stripSwiftSymbols</key><true/>
+          </dict></plist>
+          EOF
+          xcodebuild \
+            -project Pingo.xcodeproj \
+            -scheme Pingo \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Pingo.xcarchive \
+            MARKETING_VERSION="${VER}" \
+            CURRENT_PROJECT_VERSION="${CODE}" \
+            DEVELOPMENT_TEAM="${TEAM}" \
+            CODE_SIGN_STYLE=Manual \
+            archive
+          xcodebuild -exportArchive \
+            -archivePath build/Pingo.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ExportOptions.ci.plist
+          mkdir -p dist
+          cp build/export/*.ipa "dist/pingo.ipa"
+          cp build/export/*.ipa "dist/pingo-ios-${VER}.ipa"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ios-build
+          path: ios/dist/*
+
+  publish:
+    needs: [version, android, ios]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v5
+        with:
+          name: android-apk
+          path: dist
+      - uses: actions/download-artifact@v5
+        with:
+          name: ios-build
+          path: dist
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.tag }}
-          name: Pingo ${{ steps.ver.outputs.name }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Pingo ${{ needs.version.outputs.name }}
           body: |
-            **Versión:** `${{ steps.ver.outputs.name }}`
-            **Commit:** `${{ steps.ver.outputs.short }}`
-            **Notas:** ${{ steps.ver.outputs.notes }}
+            **Versión:** `${{ needs.version.outputs.name }}`
+            **Commit:** `${{ needs.version.outputs.short }}`
+            **Notas:** ${{ needs.version.outputs.notes }}
 
-            Instala `pingo.apk` (permite apps de orígenes desconocidos).
-            Si ya tenías un APK de WebIntoApp, desinstálalo primero (firma distinta).
-          files: |
-            dist/pingo.apk
-            dist/pingo-${{ steps.ver.outputs.name }}.apk
-          fail_on_unmatched_files: true
+            ### Android
+            - Instala `pingo.apk` (apps de orígenes desconocidos).
+            - Si tenías WebIntoApp u otra firma, desinstálalo primero.
+
+            ### iOS
+            - `pingo.ipa` (si aparece): instálalo con [AltStore](https://altstore.io) / Sideloadly / Apple Configurator, o súbelo a TestFlight.
+            - `pingo-ios-simulator-*.zip`: solo para simulador Xcode (pruebas).
+            - Sin IPA firmada: en el iPhone abre https://pingo-halloween.onrender.com en Safari → Compartir → **Añadir a pantalla de inicio**.
+          files: dist/*
+          fail_on_unmatched_files: false
           generate_release_notes: true
-
-      - name: Update update.json + changelog versions
+      - name: Update update.json + versions
         env:
           REPO: ${{ github.repository }}
-          VER: ${{ steps.ver.outputs.name }}
-          TAG: ${{ steps.ver.outputs.tag }}
-          SHORT: ${{ steps.ver.outputs.short }}
-          NOTES: ${{ steps.ver.outputs.notes }}
+          VER: ${{ needs.version.outputs.name }}
+          CODE: ${{ needs.version.outputs.code }}
+          TAG: ${{ needs.version.outputs.tag }}
+          SHORT: ${{ needs.version.outputs.short }}
+          NOTES: ${{ needs.version.outputs.notes }}
+          APP_STORE_URL: ${{ secrets.IOS_APP_STORE_URL }}
+          TESTFLIGHT_URL: ${{ secrets.IOS_TESTFLIGHT_URL }}
         run: |
           python3 <<'PY'
           import json, os, pathlib, re, hashlib
-          ver = os.environ["VER"]
-          short = os.environ["SHORT"]
-          notes = os.environ["NOTES"]
-          apk = f"https://github.com/{os.environ['REPO']}/releases/download/{os.environ['TAG']}/pingo.apk"
-          path = pathlib.Path("src/main/resources/static/update.json")
+          ver, short, notes = os.environ["VER"], os.environ["SHORT"], os.environ["NOTES"]
+          code, tag, repo = os.environ["CODE"], os.environ["TAG"], os.environ["REPO"]
+          dist = pathlib.Path("dist")
+          apk = dist / "pingo.apk"
+          ipa = dist / "pingo.ipa"
           data = {
             "version": ver,
             "apkVersion": ver,
+            "iosVersion": ver,
             "build": short,
             "force": False,
-            "apkUrl": apk,
-            "sha256": hashlib.sha256(pathlib.Path("dist/pingo.apk").read_bytes()).hexdigest(),
+            "apkUrl": f"https://github.com/{repo}/releases/download/{tag}/pingo.apk",
+            "sha256": hashlib.sha256(apk.read_bytes()).hexdigest() if apk.exists() else "",
             "notes": notes or f"Release {ver}",
+            "iosInstall": "safari-home" if not ipa.exists() else "ipa",
           }
-          path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          if ipa.exists():
+            data["iosIpaUrl"] = f"https://github.com/{repo}/releases/download/{tag}/pingo.ipa"
+            data["iosSha256"] = hashlib.sha256(ipa.read_bytes()).hexdigest()
+          store = os.environ.get("APP_STORE_URL") or ""
+          tf = os.environ.get("TESTFLIGHT_URL") or ""
+          if store.startswith("https://apps.apple.com/"):
+            data["appStoreUrl"] = store
+          if tf.startswith("https://"):
+            data["testFlightUrl"] = tf
+          pathlib.Path("src/main/resources/static/update.json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
           cl = pathlib.Path("src/main/resources/static/js/changelog.js")
           text = cl.read_text(encoding="utf-8")
           text = re.sub(r"appVersion:\s*'[^']*'", f"appVersion: '{ver}'", text, count=1)
           text = re.sub(r"apkVersion:\s*'[^']*'", f"apkVersion: '{ver}'", text, count=1)
           text = re.sub(r"version:\s*'[^']*'", f"version: '{short}'", text, count=1)
           cl.write_text(text, encoding="utf-8")
-          vp = pathlib.Path("android/version.properties")
-          vp.write_text(
-            f"VERSION_CODE={os.environ.get('VERSION_CODE', '1')}\n"
+          pathlib.Path("android/version.properties").write_text(
+            f"VERSION_CODE={code}\n"
             f"VERSION_NAME={ver}\n"
-            f"PINGO_WEB_URL={os.environ.get('PINGO_WEB_URL', 'https://pingo-halloween.onrender.com')}\n",
+            f"PINGO_WEB_URL=https://pingo-halloween.onrender.com\n",
             encoding="utf-8",
           )
+          # Keep iOS marketing version aligned in project.yml for next local generate
+          py = pathlib.Path("ios/project.yml")
+          py.write_text(re.sub(r'(MARKETING_VERSION:\s*")[^"]*(")', rf'\g<1>{ver}\2', py.read_text(encoding="utf-8"), count=1), encoding="utf-8")
           print("update.json ->", data)
           PY
-
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/main/resources/static/update.json \
                   src/main/resources/static/js/changelog.js \
-                  android/version.properties
+                  android/version.properties \
+                  ios/project.yml
           if git diff --cached --quiet; then
             echo "No version file changes"
             exit 0
           fi
-          git commit -m "chore(release): v${{ steps.ver.outputs.name }} [skip apk]"
+          git commit -m "chore(release): v${{ needs.version.outputs.name }} [skip apk]"
           git push
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: pingo-${{ steps.ver.outputs.name }}
-          path: dist/*.apk

@@ -3,28 +3,29 @@ options:
   bundleIdPrefix: com.pingo
   deploymentTarget:
     iOS: "16.0"
+  createIntermediateGroups: true
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.2.0"
-    CURRENT_PROJECT_VERSION: "1"
-    GENERATE_INFOPLIST_FILE: NO
-    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.2.4"
+    CURRENT_PROJECT_VERSION: "4"
     TARGETED_DEVICE_FAMILY: "1,2"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
 targets:
   Pingo:
     type: application
     platform: iOS
-    sources: [Pingo]
-    info:
-      path: Pingo/Info.plist
-      properties:
-        CFBundleDisplayName: Pingo
-        UILaunchScreen: {}
-        NSMicrophoneUsageDescription: Habla con los participantes de tu sala al mantener pulsado el micrófono.
-        PingoWebURL: https://pingo-halloween.onrender.com
-        UIApplicationSceneManifest:
-          UIApplicationSupportsMultipleScenes: false
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    sources:
+      - path: Pingo
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pingo.halloween
+        PRODUCT_NAME: Pingo
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Pingo/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
     scheme:
       gatherCoverageData: false

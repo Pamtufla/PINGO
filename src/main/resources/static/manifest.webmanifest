@@ -1,0 +1,17 @@
+{
+  "name": "Pingo de Halloween",
+  "short_name": "Pingo",
+  "description": "Bingo competitivo en tiempo real",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a0a2e",
+  "theme_color": "#1a0a2e",
+  "icons": [
+    {
+      "src": "/img/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

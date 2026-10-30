@@ -1,13 +1,18 @@
-# Actualizaciones APK (sin Play Store)
+# Actualizaciones (Android APK + iOS)
 
 ## Automático (recomendado)
 
 Cada **push a `main`** dispara `.github/workflows/release-apk.yml`:
 
-1. Compila un APK Android (WebView → tu URL de Render).
-2. Publica un **GitHub Release** `v1.2.<número>` con `pingo.apk`.
-3. Actualiza `update.json` y las versiones en `changelog.js`.
-4. Render vuelve a desplegar; la app detecta la nueva versión y ofrece descargar.
+1. Compila **APK** Android y build **iOS** (simulador siempre; IPA si hay secretos Apple).
+2. Publica un **GitHub Release** `v1.2.<número>` con esos archivos.
+3. Actualiza `update.json` (incluye `iosVersion` / `iosIpaUrl` si hay IPA).
+4. Render despliega; la app ofrece actualizar.
+
+### iPhone sin IPA firmada
+
+Safari → Compartir → **Añadir a pantalla de inicio** (o botón **INSTALAR EN IPHONE**).  
+Detalle de firma/TestFlight: `ios/README.md`.
 
 No hace falta WebIntoApp para releases nuevos.
 
