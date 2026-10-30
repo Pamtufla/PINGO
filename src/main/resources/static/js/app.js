@@ -119,13 +119,14 @@ function load(){try{
   if(s&&CONFIG.SIZES[s.size]&&Array.isArray(s.cells)&&s.cells.length===s.size*s.size&&Array.isArray(s.marked)&&s.marked.length===s.cells.length&&s.marked.every(v=>typeof v==='boolean')){s.how=s.how||{};return s}
 }catch(e){}return null}
 function show(id){
+  const already=document.getElementById(id)?.classList.contains('on');
   document.querySelectorAll('.screen').forEach(s=>{
     const on=s.id===id;
     s.classList.toggle('on',on);
     s.classList.remove('enter');
     if(on){void s.offsetWidth;s.classList.add('enter')}
   });
-  window.scrollTo({top:0,behavior:'smooth'});
+  if(!already) window.scrollTo({top:0,behavior:'smooth'});
 }
 let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2200)}
 
@@ -274,10 +275,11 @@ function renderServerList(rows){
 function fresh(code){
   st.code=code; st.cells=build(code);
   st.marked=st.cells.map(c=>c===null); st.bingos=[]; st.how={};
-  save(); renderGrid(); update();
+  save(); renderGrid({animate:true}); update();
 }
-function renderGrid(){
-  const g=$('#grid'); g.innerHTML=''; g.className='grid n'+G.N+' slam-in'; g.style.setProperty('--n',G.N);
+function renderGrid(opts){
+  const y=window.scrollY||window.pageYOffset||0;
+  const g=$('#grid'); g.innerHTML=''; g.className='grid n'+G.N+(opts&&opts.animate?' slam-in':''); g.style.setProperty('--n',G.N);
   $('#game').dataset.n=G.N;
   st.cells.forEach((c,i)=>{
     const b=document.createElement('button'); b.type='button'; b.className='cell';
@@ -287,10 +289,14 @@ function renderGrid(){
       b.textContent=t;b.classList.add(t.length<26?'t1':t.length>44?'t3':'t2');
       if(c.ch)b.classList.add('reto');
       if(c.mini)b.classList.add('minigame');
-      b.dataset.i=i;b.setAttribute('aria-pressed','false');b.setAttribute('aria-label',(c.ch?'Reto: ':'')+t);b.onclick=()=>toggle(i);
+      if(st.marked[i]){b.classList.add('on');b.setAttribute('aria-pressed','true')}
+      else b.setAttribute('aria-pressed','false');
+      if(st.how[i]==='paid')b.classList.add('paid');
+      b.dataset.i=i;b.setAttribute('aria-label',(c.ch?'Reto: ':'')+t);b.onclick=()=>toggle(i);
     }
     g.append(b);
   });
+  requestAnimationFrame(()=>window.scrollTo(0,y));
 }
 function done(){
   const d=LINES.filter(l=>l.c.every(i=>st.marked[i]));
@@ -314,7 +320,7 @@ function update(event){
     const was=b.classList.contains('on');
     b.classList.toggle('on',!!st.marked[i]); b.setAttribute('aria-pressed',!!st.marked[i]); b.classList.toggle('win',win.has(i));
     b.classList.toggle('paid',st.how[i]==='paid');
-    if(!was && st.marked[i]) {b.classList.remove('mark-pop'); void b.offsetWidth; b.classList.add('mark-pop')}
+    if(event==='mark' && !was && st.marked[i]) {b.classList.remove('mark-pop'); void b.offsetWidth; b.classList.add('mark-pop')}
   });
   const found=st.marked.filter((m,i)=>m&&st.cells[i]!==null).length, pct=Math.round(found/G.NEED*100);
   const rs=retoStats();
@@ -371,7 +377,7 @@ async function setMark(i,on,how){
     st.marked[i]=on;
     if(on&&how)st.how[i]=how;else delete st.how[i];
     if(PingoMP.getRoom())await PingoMP.syncProgress(progressStats(on?'mark':null));
-    const d=update();const fresh_=d.filter(l=>!st.bingos.includes(l.id));
+    const d=update(on?'mark':null);const fresh_=d.filter(l=>!st.bingos.includes(l.id));
     st.bingos=d.map(l=>l.id);save();
     if(fresh_.length&&on&&!PingoMP.getRoom())bingo(fresh_);
   }catch(e){st.marked=previous.marked;st.how=previous.how;update();toast(e.message);if(PingoMP.getRoom())PingoMP.refresh().catch(()=>{});}
@@ -498,7 +504,23 @@ function feed(msg){
 function onPlayersUpdate(list){
   rivals=PingoRules.merge(rivals,list);
   const mine=list.find(p=>p.client_id===PingoMP.clientId());
-  if(st&&mine&&mine.card){st.cells=mine.card.cells;st.marked=mine.card.marked;st.how=mine.card.how;st.swaps=mine.swaps;st.finished=!!mine.position;save();renderGrid();update();}
+  if(st&&mine&&mine.card){
+    const nextCells=mine.card.cells, nextMarked=mine.card.marked, nextHow=mine.card.how||{};
+    const cellsChanged=JSON.stringify(st.cells)!==JSON.stringify(nextCells);
+    const markedChanged=JSON.stringify(st.marked)!==JSON.stringify(nextMarked)||JSON.stringify(st.how||{})!==JSON.stringify(nextHow);
+    const metaChanged=(st.swaps||0)!==(mine.swaps||0)||!!st.finished!==!!mine.position;
+    // While we own an in-flight mark, ignore echo snapshots so the board does not flicker.
+    if(cardBusy && !cellsChanged){ /* keep local optimistic card */ }
+    else if(cellsChanged){
+      const y=window.scrollY||0;
+      st.cells=nextCells;st.marked=nextMarked;st.how=nextHow;st.swaps=mine.swaps;st.finished=!!mine.position;save();
+      renderGrid();update();window.scrollTo(0,y);
+    }else if(markedChanged){
+      st.marked=nextMarked;st.how=nextHow;st.swaps=mine.swaps;st.finished=!!mine.position;save();update();
+    }else if(metaChanged){
+      st.swaps=mine.swaps;st.finished=!!mine.position;save();update();
+    }
+  }
   const lobbyOn=$('#lobby').classList.contains('on');
   if(lobbyOn) renderRankList($('#lobbyList'), list, false);
   if($('#game').classList.contains('on')){
@@ -514,7 +536,9 @@ function onPlayersUpdate(list){
         }
       }
     });
+    const y=window.scrollY||0;
     renderRankList($('#rankList'), list, true);
+    if(Math.abs((window.scrollY||0)-y)>1) window.scrollTo(0,y);
   }
   $('#lobbyStatus').textContent = list.length+' jugador'+(list.length===1?'':'es')+' en la sala';
 }

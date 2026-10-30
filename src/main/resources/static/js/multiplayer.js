@@ -48,5 +48,5 @@
  global.PingoMP={enabled,init,clientId,createRoom,joinRoom,listRooms,fetchPlayers,startRoom,endRoom,saveMatchResults,isMatchArchived,fetchLeaderboard,
  getClient:()=>sb,refreshCrowns,queueSync,syncProgress,leave,isHost:()=>!!room&&room.host_client_id===clientId(),getRoom:()=>room,getPlayer:()=>playerRow,
  setHandlers:h=>{onPlayers=h.onPlayers;onRoom=h.onRoom;onError=h.onError;},
- setCard:card=>action('card',{card}),swap:index=>action('swap',{index}),startMini:index=>action('mini_start',{index}),answerMini:(id,answer)=>action('mini_answer',{id,answer:String(answer)}),refresh:()=>action('snapshot')};
+ setCard:card=>action('card',{card}),swap:index=>action('swap',{index}),startMini:index=>action('mini_start',{index}),answerMini:(id,answer)=>action('mini_answer',{id,answer:String(answer)}),cancelMini:id=>action('mini_cancel',{id}),refresh:()=>action('snapshot')};
 })(window);
