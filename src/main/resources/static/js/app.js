@@ -36,8 +36,8 @@ const BANK = [
 ];
 
 const RETOS = [
-  "Haz el BAAAKAA en voz alta","Pide el IG a una chica","Sacarse una foto con un grupo",
-  "Recibir un dulce","Elogiar un disfraz(sexo opuesto)","Aullar como lobo","Tirate al piso por 5 segundos"
+  "Inventa una rima sobre Halloween","Dibuja un fantasma en 30 segundos","Foto con tu grupo, con su permiso",
+  "Nombra cinco disfraces en 20 segundos","Elogia un disfraz con respeto","Imita un personaje sin gritar","Cuenta una historia de miedo en un minuto"
 ];
 
 const TUTORIAL = [
@@ -77,6 +77,7 @@ let busy = false;
 let serverCache = [];
 let pendingResults = null; // { matchId, mode, roomCode, size, rows }
 let resultsLocked = false;
+let cardBusy = false;
 let histTab = 'top';
 
 function geo(n){
@@ -94,10 +95,13 @@ function build(code){
   const mix = arr => {const a=arr.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
   const normal = mix(POOL), retos = mix(RPOOL);
   const slots = [...Array(G.TOTAL).keys()].filter(i=>!(G.HAS_FREE&&i===G.FREE_IDX));
-  const retoAt = new Set(mix(slots).slice(0,G.RETOS));
+  const ordered=mix(slots);
+  const retoAt = new Set(ordered.slice(0,G.RETOS));
+  const miniAt = new Set(ordered.slice(G.RETOS,G.RETOS+PingoRules.rules(st.rules).minigames));
   let ni=0, ri=0;
   return [...Array(G.TOTAL).keys()].map(i=>{
     if(G.HAS_FREE&&i===G.FREE_IDX) return null;
+    if(miniAt.has(i)) return {t:'🎮 MINIJUEGO',mini:true};
     return retoAt.has(i) ? {t:retos[ri++],ch:true} : {t:normal[ni++]};
   });
 }
@@ -109,10 +113,10 @@ function lines(N){
   L.push({id:'d2',name:'Diagonal ↙',c:[...Array(N)].map((_,i)=>i*N+(N-1-i))});
   return L;
 }
-function save(){try{localStorage.setItem(CONFIG.STORAGE_KEY,JSON.stringify(st))}catch(e){}}
+function save(){try{localStorage.setItem(CONFIG.STORAGE_KEY,JSON.stringify(st))}catch(e){toast('No se pudo guardar en este dispositivo. Exporta una copia antes de cerrar.')}}
 function load(){try{
   const s=JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY));
-  if(s&&CONFIG.SIZES[s.size]&&Array.isArray(s.cells)&&s.cells.length===s.size*s.size&&Array.isArray(s.marked)){s.how=s.how||{};return s}
+  if(s&&CONFIG.SIZES[s.size]&&Array.isArray(s.cells)&&s.cells.length===s.size*s.size&&Array.isArray(s.marked)&&s.marked.length===s.cells.length&&s.marked.every(v=>typeof v==='boolean')){s.how=s.how||{};return s}
 }catch(e){}return null}
 function show(id){
   document.querySelectorAll('.screen').forEach(s=>{
@@ -178,6 +182,7 @@ function skipTutorial(){markTutorialDone(); show('name'); $('#nameIn').focus()}
 /* ===== MODOS ===== */
 function setMode(mode){
   playMode=mode;
+  $('#gameRules').disabled=mode==='join';
   [...$('#modeGrid').children].forEach(b=>{
     const on=b.dataset.mode===mode;
     b.classList.toggle('on',on);
@@ -281,6 +286,7 @@ function renderGrid(){
       const t=c.t;
       b.textContent=t;b.classList.add(t.length<26?'t1':t.length>44?'t3':'t2');
       if(c.ch)b.classList.add('reto');
+      if(c.mini)b.classList.add('minigame');
       b.dataset.i=i;b.setAttribute('aria-pressed','false');b.setAttribute('aria-label',(c.ch?'Reto: ':'')+t);b.onclick=()=>toggle(i);
     }
     g.append(b);
@@ -292,14 +298,14 @@ function done(){
   return d;
 }
 function retoStats(){
-  const v=Object.keys(st.how).filter(i=>st.marked[i]).map(i=>st.how[i]);
+  const v=Object.keys(st.how).filter(i=>st.marked[i]&&st.cells[i]&&st.cells[i].ch).map(i=>st.how[i]);
   const paid=v.filter(x=>x==='paid').length;
   return {ok:v.length-paid, paid, total:paid*CONFIG.PENALTY};
 }
 function progressStats(event){
   const found=st.marked.filter((m,i)=>m&&st.cells[i]!==null).length;
   const rs=retoStats();
-  return {found, need:G.NEED, bingos:st.bingos.length, retosOk:rs.ok, retosPaid:rs.paid, event:event||null};
+  return {found, need:G.NEED, bingos:st.bingos.length, retosOk:rs.ok, retosPaid:rs.paid, event:event||null,marked:st.marked.slice(),how:{...st.how}};
 }
 function update(event){
   const d=done(), win=new Set(); d.filter(l=>l.id!=='full').forEach(l=>l.c.forEach(i=>win.add(i)));
@@ -319,26 +325,57 @@ function update(event){
   $('#codeBtn').textContent=fullCode();
   const room=PingoMP.getRoom && PingoMP.getRoom();
   const chip=$('#gRoom');
-  if(room){chip.style.display=''; chip.textContent='Sala '+room.code+' · en vivo'; $('#liveBoard').style.display='';}
+  if(room){chip.style.display=''; chip.textContent='Sala '+room.code+(PingoMP.getPlayer()&&!PingoMP.getPlayer().participated&&room.status==='live'?' · espectador':' · '+(room.rules.podium?'podio':'clásico')); $('#liveBoard').style.display='';}
   else {chip.style.display='none'; $('#liveBoard').style.display='none'}
-  if(room) PingoMP.queueSync(progressStats(event));
+  // Progress is sent only by explicit actions, never by rendering.
   return d;
 }
+function canPlay(){
+  if(st.room&&!PingoMP.getRoom())return false;
+  const room=PingoMP.getRoom(),player=PingoMP.getPlayer();
+  return !cardBusy&&!resultsLocked&&!st.finished&&(!room||(room.status==='live'&&player&&player.participated&&!player.position));
+}
 function toggle(i){
+  if(!canPlay()){toast('Espera la sincronización o el inicio de la partida');return}
+  if(st.cells[i].mini){
+    if(st.marked[i])return;
+    if(PingoMP.getRoom())PingoMP.startMini(i).catch(e=>toast(e.message));
+    else PingoMinigames.solo(i,index=>setMark(index,true,'mini'));
+    return;
+  }
   if(st.cells[i].ch&&!st.marked[i]){askReto(i);return}
+  if(!st.marked[i]&&PingoRules.rules(st.rules).substitutions>(st.swaps||0)){
+    modal({emoji:'bolt',title:'CASILLA',text:st.cells[i].t,btns:[['ENCONTRADO','',()=>setMark(i,true)],['IMPOSIBLE: CAMBIAR POR RETO DIFÍCIL','ghost',()=>replaceChallenge(i)],['CANCELAR','ghost',null]]});return;
+  }
   setMark(i,!st.marked[i]);
 }
-function setMark(i,on,how){
-  st.marked[i]=on;
-  if(on&&how)st.how[i]=how; else delete st.how[i];
-  if(navigator.vibrate)try{navigator.vibrate(12)}catch(e){}
-  const d=update(on?'mark':null);
-  const fresh_=d.filter(l=>!st.bingos.includes(l.id));
-  st.bingos=d.map(l=>l.id); save();
-  if(fresh_.length&&on){
-    bingo(fresh_);
-    if(PingoMP.getRoom()) PingoMP.queueSync(progressStats(fresh_.some(l=>l.id==='full')?'cartilla':'bingo'));
-  }
+async function replaceChallenge(i){
+  if(!canPlay())return;
+  cardBusy=true;
+  try{
+    if(PingoMP.getRoom())await PingoMP.swap(i);
+    else{
+      const rules=PingoRules.rules(st.rules);
+      if((st.swaps||0)>=rules.substitutions||st.marked[i]||(st.cells[i].ch&&!rules.reverse))throw new Error('Sustitución no permitida');
+      const challenge=st.cells[i].ch?PingoRules.challenges[4]:PingoRules.challenges[(st.swaps||0)%4];
+      st.cells[i]={t:challenge.text,ch:challenge.difficulty==='hard',category:challenge.category,difficulty:challenge.difficulty};st.swaps=(st.swaps||0)+1;
+    }
+    save();renderGrid();update();toast('Desafío sustituido');
+  }catch(e){toast(e.message)}finally{cardBusy=false}
+}
+async function setMark(i,on,how){
+  if(!canPlay())return;
+  cardBusy=true;
+  const previous={marked:st.marked.slice(),how:{...st.how}};
+  try{
+    st.marked[i]=on;
+    if(on&&how)st.how[i]=how;else delete st.how[i];
+    if(PingoMP.getRoom())await PingoMP.syncProgress(progressStats(on?'mark':null));
+    const d=update();const fresh_=d.filter(l=>!st.bingos.includes(l.id));
+    st.bingos=d.map(l=>l.id);save();
+    if(fresh_.length&&on&&!PingoMP.getRoom())bingo(fresh_);
+  }catch(e){st.marked=previous.marked;st.how=previous.how;update();toast(e.message);if(PingoMP.getRoom())PingoMP.refresh().catch(()=>{});}
+  finally{cardBusy=false}
 }
 function askReto(i){
   const note=document.createElement('p');note.className='note';
@@ -346,6 +383,7 @@ function askReto(i){
   modal({emoji:'bolt pk bolt',title:'¡RETO!',text:st.cells[i].t,extra:note,
     btns:[['LO CUMPLÍ','',()=>setMark(i,true,'done')],
           ['$ PAGO '+CONFIG.CURRENCY+' '+CONFIG.PENALTY,'pay',()=>setMark(i,true,'paid')],
+          ...(PingoRules.rules(st.rules).reverse ? [['SUSTITUIR POR OBSERVACIÓN','ghost',()=>replaceChallenge(i)]] : []),
           ['CANCELAR','ghost',null]]});
 }
 function mini(set){
@@ -357,9 +395,11 @@ function bingo(ls){
   const full=ls.some(l=>l.id==='full'), set=new Set(); ls.forEach(l=>l.c.forEach(i=>set.add(i)));
   confetti();
   if(full){
+    st.finished=true;st.matchId=st.matchId||newMatchId();save();
+    PingoRules.award(st.matchId,PingoMP.clientId(),true);
     modal({emoji:'pk gh pk',title:'¡CARTILLA!',
-      text:'¡TE PASASTE DE MOSTRO! Revisa el podio y decide si guardas el resultado.',
-      btns:[['VER RESULTADOS','',()=>finishMatch()],['SEGUIR JUGANDO','ghost',null]]});
+      text:'Cartilla completada: primer puesto y una corona. Revisa el resultado.',
+      btns:[['VER RESULTADOS','',()=>finishMatch()]]});
     return;
   }
   modal({emoji:'pk gh pk',title:'¡PINGO!',
@@ -416,6 +456,7 @@ function sizePicker(current,onPick){
 /* ===== MULTIPLAYER UI ===== */
 function sortRivals(list){
   return list.slice().sort((a,b)=>{
+    if(a.position||b.position)return (a.position||999)-(b.position||999);
     const pa=(a.found/(a.need||1)), pb=(b.found/(b.need||1));
     if(pb!==pa) return pb-pa;
     if(b.bingos!==a.bingos) return b.bingos-a.bingos;
@@ -435,7 +476,7 @@ function renderRankList(target, list, animate){
       const prev=lastRankOrder.indexOf(p.client_id);
       if(prev>i) li.classList.add('climbed');
     }
-    li.innerHTML='<span class="pos">'+(i+1)+'</span><span class="nm">'+(p.client_id===me?'★ ':'')+escapeHtml(p.name)+'</span>'+
+    li.innerHTML='<span class="pos">'+(i+1)+'</span><span class="nm">'+(p.client_id===me?'★ ':'')+escapeHtml(p.name)+(p.position?' 🏅 '+p.position+'°':'')+(!p.connected&&p.participated?' · salió':'')+'</span>'+
       '<span class="pct">'+pct+'%</span><span class="bar-mini"><i style="width:'+pct+'%"></i></span>'+
       (p.bingos?'<span class="bg">×'+p.bingos+'</span>':'');
     target.append(li);
@@ -455,7 +496,9 @@ function feed(msg){
 }
 
 function onPlayersUpdate(list){
-  rivals=list;
+  rivals=PingoRules.merge(rivals,list);
+  const mine=list.find(p=>p.client_id===PingoMP.clientId());
+  if(st&&mine&&mine.card){st.cells=mine.card.cells;st.marked=mine.card.marked;st.how=mine.card.how;st.swaps=mine.swaps;st.finished=!!mine.position;save();renderGrid();update();}
   const lobbyOn=$('#lobby').classList.contains('on');
   if(lobbyOn) renderRankList($('#lobbyList'), list, false);
   if($('#game').classList.contains('on')){
@@ -477,6 +520,8 @@ function onPlayersUpdate(list){
 }
 
 function onRoomUpdate(r){
+  if(st){st.rules=r.rules;st.room=r.code;st.roomId=r.id;save();}
+  PingoMinigames.remote(r.game,rivals);
   if(r.status==='live' && $('#lobby').classList.contains('on')){
     toast('¡La partida empezó!');
     enterGameFromRoom();
@@ -501,7 +546,8 @@ function soloStanding(){
   const need=G.NEED;
   const pct=Math.round(found/need*100);
   return [{
-    client_id: onlineOk()?PingoMP.clientId():'local',
+    client_id: PingoMP.clientId(),
+    position:st.finished?1:null,finished:!!st.finished,
     name: st.name||'invitado',
     found, need, bingos: (st.bingos||[]).length,
     retos_ok: rs.ok, retos_paid: rs.paid, pct
@@ -510,7 +556,8 @@ function soloStanding(){
 function buildStandings(){
   const room=PingoMP.getRoom && PingoMP.getRoom();
   if(room && rivals && rivals.length){
-    return sortRivals(rivals).map(p=>({
+    return sortRivals(rivals.filter(p=>p.participated)).map(p=>({
+      position:p.position,finished:!!p.position,mini_wins:p.mini_wins,
       client_id: p.client_id,
       name: p.name,
       found: p.found|0,
@@ -525,38 +572,38 @@ function buildStandings(){
 }
 function renderResultsList(standings){
   const list=$('#resultsList'); list.innerHTML='';
-  const me=onlineOk()?PingoMP.clientId():'local';
+  const me=PingoMP.clientId();
   standings.forEach((p,i)=>{
     const li=document.createElement('li');
     li.className='rank-row result-row'+(p.client_id===me?' me':'')+(i===0?' top':'')+(i===1?' silver':'')+(i===2?' bronze':'');
     li.innerHTML=
-      '<span class="pos">'+(i+1)+'°</span>'+
-      '<span class="nm">'+(p.client_id===me?'★ ':'')+escapeHtml(p.name)+'</span>'+
+      '<span class="pos">'+(p.finished===false?'—':(p.position||i+1)+'°')+'</span>'+
+      '<span class="nm">'+(p.client_id===me?'★ ':'')+escapeHtml(p.name)+(p.position?' 🏅 '+p.position+'°':'')+(!p.connected&&p.participated?' · salió':'')+'</span>'+
       '<span class="pct">'+p.pct+'%</span>'+
       '<span class="stat">Aciertos '+p.found+'/'+p.need+'</span>'+
       '<span class="stat">PINGOs '+p.bingos+'</span>'+
-      '<span class="stat">Retos '+p.retos_ok+(p.retos_paid?' · $'+p.retos_paid:'')+'</span>';
+      '<span class="stat">Retos '+p.retos_ok+(p.retos_paid?' · $'+p.retos_paid:'')+'</span>'+
+      (p.mini_wins?'<span class="stat">Minijuegos ganados '+p.mini_wins+'</span>':'');
     list.append(li);
   });
 }
 async function finishMatch(opts){
   opts=opts||{};
   if(resultsLocked) return;
+  if(PingoMP.getRoom()&&!opts.fromRemote&&!PingoMP.isHost()&&PingoMP.getRoom().status!=='ended'){toast('Solo el anfitrión puede finalizar');return}
   resultsLocked=true;
-  // sync last progress before snapshot
   if(PingoMP.getRoom()){
-    try{ await PingoMP.syncProgress(progressStats('end')); }catch(e){}
-    try{ rivals = await PingoMP.fetchPlayers(); }catch(e){}
-    if(!opts.fromRemote && PingoMP.isHost()){
-      try{ await PingoMP.endRoom(); }catch(e){}
-    }
+    try{
+      if(!opts.fromRemote&&PingoMP.getRoom().status!=='ended')await PingoMP.endRoom();
+      rivals=await PingoMP.fetchPlayers();
+    }catch(e){resultsLocked=false;toast('No se pudo finalizar: '+e.message);return}
   }
   const standings=buildStandings();
   const room=PingoMP.getRoom && PingoMP.getRoom();
   const mode=room?'room':'solo';
   // En sala el match_id es el id de la room (igual para todos) → un solo histórico
   pendingResults={
-    matchId: room?room.id:newMatchId(),
+    matchId: room?room.id:(st.matchId||(st.matchId=newMatchId())),
     mode,
     roomCode: room?room.code:null,
     size: st?st.size:(G&&G.N)||3,
@@ -598,6 +645,7 @@ function toResultRows(pr){
     player_name: p.name,
     client_id: p.client_id,
     position: i+1,
+    finished:p.finished,mini_wins:p.mini_wins||0,
     found: p.found,
     need: p.need,
     bingos: p.bingos,
@@ -611,8 +659,9 @@ function loadLocalHistory(){
 }
 function saveLocalHistory(entry){
   const all=loadLocalHistory();
+  const existing=all.findIndex(m=>m.matchId===entry.matchId);if(existing>=0)all.splice(existing,1);
   all.unshift(entry);
-  try{localStorage.setItem(CONFIG.HISTORY_KEY,JSON.stringify(all.slice(0,100)))}catch(e){}
+  localStorage.setItem(CONFIG.HISTORY_KEY,JSON.stringify(all.slice(0,100)))
 }
 async function savePendingResults(){
   if(!pendingResults){toast('No hay resultado');return}
@@ -629,6 +678,7 @@ async function savePendingResults(){
     roomCode: pendingResults.roomCode
   };
   try{
+    saveLocalHistory({...pendingResults});
     if(onlineOk()){
       // Si ya está archivada, no insertar de nuevo
       if(await PingoMP.isMatchArchived(meta.matchId)){
@@ -665,7 +715,7 @@ async function savePendingResults(){
     afterResultsDecision();
   }catch(e){
     console.error(e);
-    toast(e.message||'No se pudo guardar');
+    toast('No se completó el guardado. Reintenta sin cerrar esta pantalla: '+(e.message||''));
   }finally{busy=false}
 }
 function discardPendingResults(){
@@ -677,7 +727,7 @@ async function afterResultsDecision(){
   $('#resultsAsk').style.display='none';
   $('#resultsSave').style.display='none';
   $('#resultsDiscard').style.display='none';
-  pendingResults=null;
+  pendingResults=null;PingoMinigames.reset();
   try{localStorage.removeItem(CONFIG.STORAGE_KEY)}catch(e){}
   st=null;
   await stopRoomChat();
@@ -702,7 +752,7 @@ function groupMatches(rows){
     });
     map.get(id).standings.push({
       name:r.player_name||r.name,
-      position:r.position,
+      position:r.position,finished:r.finished,mini_wins:r.mini_wins,
       found:r.found, need:r.need, bingos:r.bingos,
       retos_ok:r.retos_ok, retos_paid:r.retos_paid, pct:r.pct,
       client_id:r.client_id
@@ -716,7 +766,7 @@ function flattenLocalAsRows(local){
   local.forEach(m=>{
     (m.standings||[]).forEach((p,i)=>rows.push({
       match_id:m.matchId, mode:m.mode, room_code:m.roomCode, size:m.size,
-      created_at:m.createdAt, player_name:p.name, position:i+1,
+      created_at:m.createdAt, player_name:p.name, position:p.position||i+1,finished:p.finished,mini_wins:p.mini_wins,
       found:p.found, need:p.need, bingos:p.bingos,
       retos_ok:p.retos_ok, retos_paid:p.retos_paid, pct:p.pct, client_id:p.client_id
     }));
@@ -765,6 +815,7 @@ async function renderHistory(){
   }else{
     groupMatches(merged).slice(0,25).forEach(m=>{
       const winner=m.standings[0];
+      const names=m.standings.map((p,i)=>(i+1)+'° '+escapeHtml(p.name||'invitado')).join(' · ');
       const li=document.createElement('li');
       li.className='rank-row result-row match-card';
       const when=m.createdAt?new Date(m.createdAt).toLocaleString():'';
@@ -772,11 +823,11 @@ async function renderHistory(){
         '<span class="pos">🏆</span>'+
         '<span class="nm">'+(m.mode==='room'?'Sala '+(m.roomCode||'?'):'Solo')+' · '+m.size+'×'+m.size+'</span>'+
         '<span class="pct">'+(winner?winner.pct+'%':'')+'</span>'+
-        '<span class="stat">1° '+(winner?escapeHtml(winner.name):'-')+' · '+m.standings.length+' jugadores</span>'+
+        '<span class="stat">'+m.standings.length+' jugador'+(m.standings.length===1?'':'es')+': '+names+'</span>'+
         '<span class="stat">'+when+'</span>';
       li.onclick=()=>{
         pendingResults=null;
-        $('#resultsMeta').textContent=(m.mode==='room'?'Sala '+(m.roomCode||'?')+' · ':'Solo · ')+m.size+'×'+m.size;
+        $('#resultsMeta').textContent=(m.mode==='room'?'Sala '+(m.roomCode||'?')+' · ':'Solo · ')+m.size+'×'+m.size+' · '+m.standings.length+' jugadores';
         renderResultsList(m.standings.map(p=>({...p, client_id:p.client_id||''})));
         $('#resultsAsk').style.display='none';
         $('#resultsSave').style.display='none';
@@ -804,6 +855,8 @@ function enterLobby(){
 }
 
 function enterGameFromRoom(){
+  const activeRoom=PingoMP.getRoom();
+  if(st&&activeRoom){st.rules=activeRoom.rules;st.room=activeRoom.code;st.roomId=activeRoom.id;save();}
   if(!st || !st.cells || !st.cells.length){
     // reconstruir cartilla desde player row
     const p=PingoMP.getPlayer();
@@ -830,14 +883,17 @@ async function begin(name){
 
   busy=true;
   try{
+    if(PingoMP.getRoom())await leaveRoom();
+    rivals=[];resultsLocked=false;pendingResults=null;PingoMinigames.reset();
+    const rules=PingoRules.rules({podium:$('#rulePodium').checked,substitutions:+$('#ruleSwaps').value,reverse:$('#ruleReverse').checked,minigames:+$('#ruleMinis').value,reward:+$('#ruleReward').value});
     if(playMode==='solo'){
       const n=(p&&p.size)||pick;
-      st={name:name||'invitado',size:n,code:'',cells:[],marked:[],bingos:[],how:{}};
+      st={name:name||'invitado',size:n,code:'',cells:[],marked:[],bingos:[],how:{},rules,matchId:newMatchId()};
       setSize(n); fresh(p?p.code:randCode()); show('game');
       return;
     }
 
-    PingoMP.setHandlers({ onPlayers: onPlayersUpdate, onRoom: onRoomUpdate });
+    PingoMP.setHandlers({ onPlayers: onPlayersUpdate, onRoom: onRoomUpdate,onError:e=>toast('Sincronización: '+e.message) });
 
     if(playMode==='host'){
       const n=(p&&p.size)||pick;
@@ -847,9 +903,10 @@ async function begin(name){
       const isPrivate=roomVisibility==='private';
       const password=($('#roomPass').value||'').trim();
       if(isPrivate && password.length<3){toast('Contraseña de al menos 3 caracteres');$('#roomPass').focus();return}
-      st={name:name||'invitado',size:n,code:card,cells:[],marked:[],bingos:[],how:{}};
+      st={name:name||'invitado',size:n,code:card,cells:[],marked:[],bingos:[],how:{},rules};
       fresh(card);
-      await PingoMP.createRoom(n, st.name, card, G.NEED, { title, isPrivate, password });
+      await PingoMP.createRoom(n, st.name, card, G.NEED, { title, isPrivate, password,rules });
+      await PingoMP.setCard(st);
       enterLobby();
       toast(isPrivate?'Sala privada creada':'Sala pública creada');
       return;
@@ -862,10 +919,12 @@ async function begin(name){
     const card=p?p.code:randCode();
     const room=await PingoMP.joinRoom(roomCode, name||'invitado', card, size=>geo(size).NEED, joinPass);
     setSize(room.size);
-    st={name:name||'invitado',size:room.size,code:card,cells:[],marked:[],bingos:[],how:{},room:room.code};
-    fresh(card);
-    await PingoMP.syncProgress(progressStats());
-    if(room.status==='live') enterGameFromRoom();
+    const player=PingoMP.getPlayer();
+    st={name:player.name,size:room.size,code:player.card_code,cells:[],marked:[],bingos:[],how:{},room:room.code,roomId:room.id,rules:room.rules};
+    if(player.card){Object.assign(st,player.card);st.finished=!!player.position;st.swaps=player.swaps;save();renderGrid();update();}
+    else {fresh(player.card_code);await PingoMP.setCard(st);}
+    if(room.status==='ended')await finishMatch({fromRemote:true});
+    else if(room.status==='live') enterGameFromRoom();
     else enterLobby();
   }catch(err){
     console.error(err);
@@ -874,11 +933,12 @@ async function begin(name){
 }
 
 function restart(n){
-  st.size=n;setSize(n);fresh(randCode());
+  st.size=n;st.finished=false;st.swaps=0;st.matchId=newMatchId();setSize(n);fresh(randCode());
   if(PingoMP.getRoom()) PingoMP.queueSync(progressStats('new'));
 }
 function hasCard(){return !!(st&&Array.isArray(st.cells)&&st.cells.length)}
 function refreshHome(){
+  $('#crownCount').textContent='👑 '+PingoRules.crowns()+' coronas solo · '+(localStorage.getItem('pingo-remote-crowns')||0)+' online';
   const b=$('#resume'); if(!b)return;
   b.style.display=hasCard()?'':'none';
   if(hasCard())b.textContent='> CONTINUAR CARTILLA ('+st.size+'×'+st.size+')';
@@ -888,7 +948,7 @@ function refreshHome(){
     : 'Modo solo · configura config.js para multiplayer';
 }
 function goHome(){refreshHome();show('home')}
-function resume(){if(!hasCard())return;update();show('game')}
+async function resume(){if(!hasCard())return;if(st.room&&!PingoMP.getRoom()){try{PingoMP.setHandlers({onPlayers:onPlayersUpdate,onRoom:onRoomUpdate,onError:e=>toast(e.message)});await PingoMP.joinRoom(st.room,st.name,st.code,G.NEED,'');if(PingoMP.getRoom().status==='ended'){await finishMatch({fromRemote:true});return}if(PingoMP.getRoom().status==='lobby'){enterLobby();return}}catch(e){toast(e.message);return}}update();show('game')}
 function confirmNew(fn){
   if(!hasCard()){fn();return}
   modal({emoji:'skull',title:'¿OTRA?',text:'Ya tienes una cartilla en curso. Si empiezas otra, perderás la actual.',
@@ -898,7 +958,7 @@ function confirmNew(fn){
 async function leaveRoom(){
   await stopRoomChat();
   await PingoMP.leave();
-  rivals=[]; lastRankOrder=[];
+  rivals=[]; lastRankOrder=[];PingoMinigames.reset();
   $('#liveBoard').style.display='none';
   const dock=$('#chatDockGame'); if(dock) dock.style.display='none';
   goHome();
@@ -985,10 +1045,17 @@ function bindMic(btn){
 /* ===== CRÉDITOS / CHANGELOG ===== */
 async function checkForUpdates(manual){
   if(!window.PingoUpdater) return;
+  const local=PingoUpdater.localAppVersion();
+  const apk=PingoUpdater.localApkVersion && PingoUpdater.localApkVersion();
   try{
-    const info=await PingoUpdater.check();
-    if(!info){
-      if(manual) toast('Ya tienes la última versión (v'+PingoUpdater.localAppVersion()+')');
+    const info=await PingoUpdater.check(manual);
+    if(info.status==='skipped' && !manual) return;
+    if(info.status==='current' || info.status==='skipped'){
+      if(!manual) return;
+      const extra=document.createElement('p');
+      extra.className='note';
+      extra.textContent='Tu versión: v'+local+(apk?' · APK '+apk:'')+' · Remota: v'+((info.remote&&info.remote.version)||local);
+      modal({emoji:'pk gh pk',title:'AL DÍA',text:'No necesitas actualizar. Ya tienes la última versión publicada.',extra,btns:[['OK','',null]]});
       return;
     }
     const r=info.remote||{};
@@ -996,14 +1063,15 @@ async function checkForUpdates(manual){
     const ver=info.remoteVer||r.version||'?';
     const extra=document.createElement('p');
     extra.className='note';
-    extra.textContent='Nueva: v'+ver+(r.build?' · '+r.build:'')+
-      (info.needApk?' · Se descargará el APK.':' · Puedes recargar el contenido.');
+    extra.textContent='Tienes: v'+local+(apk?' · APK '+apk:'')+' → Nueva: v'+ver+(r.build?' · '+r.build:'')+
+      (info.needApk?' · Se descargará el APK.':info.needStore?' · App Store.':' · Puedes recargar el contenido.');
     const btns=[];
-    if(info.needApk && r.apkUrl){
-      btns.push(['DESCARGAR APK','',()=>{
-        PingoUpdater.startApkDownload(r.apkUrl);
-        PingoUpdater.markApkInstalled(r.apkVersion||ver);
-        toast('Descargando APK… Instálalo y vuelve a abrir');
+    if(info.needStore){
+      if(r.appStoreUrl)btns.push(['ABRIR APP STORE','',()=>{try{PingoUpdater.openStore(r.appStoreUrl)}catch(e){toast(e.message)}}]);
+      else extra.textContent+=' · Falta publicar el enlace oficial de App Store.';
+    }else if(info.needApk && r.apkUrl){
+      btns.push(['DESCARGAR ACTUALIZACIÓN','',()=>{
+        try{PingoUpdater.startApkDownload(r);toast('Descargando y verificando APK…')}catch(e){toast(e.message)}
       }]);
     }else if(info.needWeb){
       btns.push(['ACTUALIZAR AHORA','',()=>{ location.reload(); }]);
@@ -1015,9 +1083,16 @@ async function checkForUpdates(manual){
     modal({emoji:'bolt pk bolt',title:'¡NUEVA VERSIÓN!',text:notes,extra,btns});
   }catch(e){
     console.warn(e);
-    if(manual) toast(e.message||'No se pudo revisar actualizaciones');
+    if(manual){
+      const extra=document.createElement('p');
+      extra.className='note';
+      extra.textContent='Tu versión instalada: v'+(local||'?');
+      modal({emoji:'bolt',title:'NO SE PUDO COMPROBAR',text:e.message||'No se pudo revisar actualizaciones',extra,btns:[['OK','',null]]});
+    }
   }
 }
+
+window.addEventListener('pingo-download',e=>toast(e.detail.message||('Descarga: '+e.detail.progress+'%')));
 
 function openAbout(){
   const about=window.PINGO_ABOUT;
@@ -1100,7 +1175,7 @@ $('#endMatch').onclick=()=>{
 
 $('#startNamed').onclick=()=>{
   const n=$('#nameIn').value.trim();
-  if(!n){toast('Escribe tu nombre o eres kbro');$('#nameIn').focus();return}
+  if(!n){toast('Escribe tu nombre');$('#nameIn').focus();return}
   confirmNew(()=>begin(n));
 };
 $('#startGuest').onclick=()=>confirmNew(()=>begin(''));
@@ -1142,9 +1217,9 @@ bindMic($('#micLobby'));
 bindMic($('#micGame'));
 
 /* ===== ARRANQUE ===== */
-if(onlineOk()) PingoMP.init();
+if(onlineOk()){PingoMP.init();PingoMP.refreshCrowns().then(()=>refreshHome()).catch(()=>{});}
 st=load();
-if(st){setSize(st.size);renderGrid();update();show('game')}
+if(st){setSize(st.size);renderGrid();if(!st.room){update();show('game')}}
 refreshHome();
 // Revisa update.json (APK fuera de Play Store)
 setTimeout(()=>checkForUpdates(false), 900);

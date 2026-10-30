@@ -102,7 +102,7 @@ jobs:
           NOTES: ${{ steps.ver.outputs.notes }}
         run: |
           python3 <<'PY'
-          import json, os, pathlib, re
+          import json, os, pathlib, re, hashlib
           ver = os.environ["VER"]
           short = os.environ["SHORT"]
           notes = os.environ["NOTES"]
@@ -114,6 +114,7 @@ jobs:
             "build": short,
             "force": False,
             "apkUrl": apk,
+            "sha256": hashlib.sha256(pathlib.Path("dist/pingo.apk").read_bytes()).hexdigest(),
             "notes": notes or f"Release {ver}",
           }
           path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

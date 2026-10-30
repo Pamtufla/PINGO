@@ -1,6 +1,10 @@
 package com.pingo.halloween;
 
 import android.Manifest;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
+import java.util.Collections;
+import org.json.JSONObject;
 import android.annotation.SuppressLint;
 import android.app.DownloadManager;
 import android.content.Intent;
@@ -40,12 +44,24 @@ public class MainActivity extends AppCompatActivity {
 
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
+        s.setUserAgentString(s.getUserAgentString()+" PingoAndroid/"+BuildConfig.VERSION_NAME);
+        VerifiedUpdater updater = new VerifiedUpdater(this, webView);
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            Uri trusted = Uri.parse(BuildConfig.WEB_URL);
+            String origin = trusted.getScheme()+"://"+trusted.getAuthority();
+            WebViewCompat.addWebMessageListener(webView,"PingoNative",Collections.singleton(origin),
+                (view,message,sourceOrigin,isMainFrame,reply)->{
+                    if(!isMainFrame)return;
+                    try { JSONObject data=new JSONObject(message.getData()); updater.download(data.getString("url"),data.getString("sha256")); }
+                    catch(Exception e){Toast.makeText(this,"Solicitud de actualización inválida",Toast.LENGTH_SHORT).show();}
+                });
+        }
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
-        s.setAllowFileAccess(true);
+        s.setAllowFileAccess(false);
         s.setAllowContentAccess(true);
-        s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             s.setSafeBrowsingEnabled(true);
@@ -60,14 +76,11 @@ public class MainActivity extends AppCompatActivity {
                 Uri uri = request.getUrl();
                 String u = uri.toString();
                 if (u.endsWith(".apk") || u.contains("/releases/download/")) {
-                    enqueueApkDownload(u);
+                    Toast.makeText(MainActivity.this, "Usa Buscar actualización para verificar el APK", Toast.LENGTH_LONG).show();
                     return true;
                 }
                 String host = uri.getHost();
-                if (host != null && (host.contains("onrender.com")
-                        || host.contains("supabase.co")
-                        || host.contains("googleapis.com")
-                        || host.contains("gstatic.com"))) {
+                if ("https".equals(uri.getScheme()) && Uri.parse(BuildConfig.WEB_URL).getHost().equals(host)) {
                     return false;
                 }
                 try {
@@ -82,6 +95,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
                 runOnUiThread(() -> {
+                    if (!request.getOrigin().getHost().equals(Uri.parse(BuildConfig.WEB_URL).getHost())) { request.deny(); return; }
                     boolean needsMic = false;
                     for (String r : request.getResources()) {
                         if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) {
@@ -99,7 +113,7 @@ public class MainActivity extends AppCompatActivity {
                                 REQ_MIC);
                         return;
                     }
-                    request.grant(request.getResources());
+                    if(needsMic)request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});else request.deny();
                 });
             }
         });
@@ -108,7 +122,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onDownloadStart(String url, String userAgent, String contentDisposition,
                                         String mimeType, long contentLength) {
-                enqueueApkDownload(url);
+                Toast.makeText(MainActivity.this,"Usa Buscar actualización para descargar un APK verificado",Toast.LENGTH_LONG).show();
             }
         });
 
@@ -130,35 +144,13 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void enqueueApkDownload(String url) {
-        try {
-            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
-            String name = URLUtil.guessFileName(url, null, "application/vnd.android.package-archive");
-            if (name == null || !name.endsWith(".apk")) name = "pingo.apk";
-            req.setTitle("Pingo — actualización");
-            req.setDescription("Descargando APK…");
-            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
-            req.setMimeType("application/vnd.android.package-archive");
-            DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-            dm.enqueue(req);
-            Toast.makeText(this, "Descargando APK… ábrelo desde Notificaciones", Toast.LENGTH_LONG).show();
-        } catch (Exception e) {
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-            } catch (Exception ignored) {
-                Toast.makeText(this, "No se pudo descargar el APK", Toast.LENGTH_SHORT).show();
-            }
-        }
-    }
-
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_MIC && pendingWebPermission != null) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                pendingWebPermission.grant(pendingWebPermission.getResources());
+                pendingWebPermission.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
             } else {
                 pendingWebPermission.deny();
             }

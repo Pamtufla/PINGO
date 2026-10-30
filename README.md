@@ -39,3 +39,7 @@ supabase/schema.sql                  → tablas (ya aplicadas en el proyecto)
 
 Proyecto: `oyymnewahufepciblafy`  
 Tablas: `rooms`, `players`, `match_results` (con RLS).
+
+## Actualización integral v2 (trabajo local)
+
+Ver [informe y despliegue](docs/IMPLEMENTACION_V2.md), [migración requerida](supabase/migration_v2.sql) y [preparación iOS](ios/README.md). No desplegar solo los archivos web sin aplicar la migración. Antes del cambio, terminar las salas antiguas: el nuevo protocolo de identidad y escritura no admite clientes anteriores.

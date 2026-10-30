@@ -480,3 +480,14 @@ input::placeholder{color:#7d7094}
   *,*::before,*::after{animation:none!important;transition:none!important}
   body{filter:none}
 }
+/* Accessible rule inputs and distinct green game tiles. */
+#gameRules {border:1px solid #666;padding:12px;font:18px/1.4 sans-serif}
+#gameRules label {display:block;text-align:left}
+#gameRules input[type=checkbox] {width:auto;min-height:24px}
+#gameRules select {background:#202020;color:#fff;padding:8px;max-width:100%}
+.cell.minigame {background:#123b26;border-color:#45e583;color:#b3ffcb}
+.cell.minigame.on {background:#276e40;color:#fff}
+#miniPanel {position:fixed;z-index:45;left:50%;transform:translateX(-50%);bottom:calc(8px + env(safe-area-inset-bottom));width:min(94vw,480px);max-height:65dvh;overflow:auto;background:#102719;border:2px solid #45e583;padding:12px;box-shadow:0 0 20px #000;font-family:sans-serif}
+#miniPanel[hidden] {display:none}
+#miniPanel .btn {display:inline-block;width:auto;margin:5px;min-width:44px;min-height:44px}
+#crownCount {color:#ffe27a}

@@ -1,115 +1,21 @@
-/* Actualización fuera de Play Store (APK / WebIntoApp)
-   1) Edita /update.json al publicar (version + apkUrl del APK en GitHub Releases u otro host)
-   2) Sube el APK y pega su URL https en apkUrl
-   3) La app compara y ofrece descargar / instalar
-*/
-(function (global) {
-  const SKIP_KEY = 'pingo-skip-update';
-  const APK_KEY = 'pingo-apk-version';
-
-  function cfg() {
-    return global.PINGO_CONFIG || {};
-  }
-  function about() {
-    return global.PINGO_ABOUT || {};
-  }
-
-  function parseVer(v) {
-    return String(v || '0.0.0').replace(/^v/i, '').split(/[.+-]/).map(x => parseInt(x, 10) || 0);
-  }
-  function cmpVer(a, b) {
-    const pa = parseVer(a), pb = parseVer(b);
-    const n = Math.max(pa.length, pb.length);
-    for (let i = 0; i < n; i++) {
-      const x = pa[i] || 0, y = pb[i] || 0;
-      if (x !== y) return x - y;
-    }
-    return 0;
-  }
-
-  function localAppVersion() {
-    return about().appVersion || '1.0.0';
-  }
-  function localApkVersion() {
-    try {
-      const s = localStorage.getItem(APK_KEY);
-      if (s) return s;
-    } catch (e) {}
-    return about().apkVersion || localAppVersion();
-  }
-  function markApkInstalled(ver) {
-    try { localStorage.setItem(APK_KEY, ver); } catch (e) {}
-  }
-  function wasSkipped(ver) {
-    try { return localStorage.getItem(SKIP_KEY) === String(ver); } catch (e) { return false; }
-  }
-  function skip(ver) {
-    try { localStorage.setItem(SKIP_KEY, String(ver)); } catch (e) {}
-  }
-
-  async function fetchManifest() {
-    const base = (cfg().UPDATE_URL || '/update.json').replace(/\?.*$/, '');
-    const url = base + (base.includes('?') ? '&' : '?') + 't=' + Date.now();
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error('No se pudo revisar actualizaciones');
-    return res.json();
-  }
-
-  /**
-   * @returns {null|{ remote, needApk, needWeb, force }}
-   */
-  async function check() {
-    if (cfg().DISABLE_UPDATE_CHECK) return null;
-    const remote = await fetchManifest();
-    const appLocal = localAppVersion();
-    const apkLocal = localApkVersion();
-    const remoteVer = remote.version || remote.apkVersion || '0.0.0';
-    const remoteApk = remote.apkVersion || remote.version || '0.0.0';
-
-    const needWeb = cmpVer(remote.version || '0.0.0', appLocal) > 0;
-    const needApk = !!remote.apkUrl && cmpVer(remoteApk, apkLocal) > 0;
-    if (!needWeb && !needApk) return null;
-
-    if (!remote.force && wasSkipped(remoteVer) && !needApk) return null;
-
-    return {
-      remote,
-      needApk,
-      needWeb,
-      force: !!remote.force,
-      remoteVer,
-      remoteApk
-    };
-  }
-
-  function startApkDownload(apkUrl) {
-    if (!apkUrl) return false;
-    // Descarga en el mismo WebView / navegador del APK
-    const a = document.createElement('a');
-    a.href = apkUrl;
-    a.download = 'pingo-halloween.apk';
-    a.rel = 'noopener';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => a.remove(), 1000);
-    // Fallback: también abrir en la misma ventana ayuda a algunos WebView
-    try {
-      const w = window.open(apkUrl, '_blank');
-      if (!w) window.location.href = apkUrl;
-    } catch (e) {
-      window.location.href = apkUrl;
-    }
-    return true;
-  }
-
-  global.PingoUpdater = {
-    check,
-    startApkDownload,
-    skip,
-    markApkInstalled,
-    localAppVersion,
-    localApkVersion,
-    cmpVer
-  };
+(function(g){
+ const cfg=()=>g.PINGO_CONFIG||{},about=()=>g.PINGO_ABOUT||{};let checking=null,downloading=false;
+ function parse(v){const m=String(v).match(/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);if(!m)throw new Error('Versión inválida');const pre=m[4]?m[4].split('.'):[];if(pre.some(x=>/^\d+$/.test(x)&&x.length>1&&x[0]==='0'))throw new Error('Versión inválida');return {core:m.slice(1,4).map(BigInt),pre};}
+ function cmpVer(a,b){const x=parse(a),y=parse(b);for(let i=0;i<3;i++)if(x.core[i]!==y.core[i])return x.core[i]>y.core[i]?1:-1;if(!x.pre.length||!y.pre.length)return x.pre.length?-1:y.pre.length?1:0;for(let i=0;i<Math.max(x.pre.length,y.pre.length);i++){const a=x.pre[i],b=y.pre[i];if(a===b)continue;if(a===undefined)return -1;if(b===undefined)return 1;const an=/^\d+$/.test(a),bn=/^\d+$/.test(b);if(an&&bn)return BigInt(a)>BigInt(b)?1:-1;if(an!==bn)return an?-1:1;return a>b?1:-1;}return 0;}
+ function localAppVersion(){return about().appVersion;}
+ function localApkVersion(){const m=navigator.userAgent.match(/PingoAndroid\/([\w.+-]+)/);return m?m[1]:null;}
+ function ios(){return /iPad|iPhone|iPod|PingoIOS/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);}
+ function apkUrl(value){const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.hostname!=='github.com'||!/^\/Pamtufla\/PINGO\/releases\/download\/[^/]+\/[^/]+\.apk$/.test(u.pathname)||u.search||u.hash)throw new Error('Descarga fuera del repositorio oficial');return u.href;}
+ async function fetchManifest(){const url=new URL(cfg().UPDATE_URL||'/update.json',location.href);if(url.origin!==location.origin)throw new Error('Fuente de actualización no autorizada');url.searchParams.set('t',Date.now());const ctrl=new AbortController(),timeout=setTimeout(()=>ctrl.abort(),10000);try{const response=await fetch(url,{cache:'no-store',signal:ctrl.signal});if(!response.ok)throw new Error('Servidor de actualizaciones no disponible');const m=await response.json();parse(m.version);if(m.apkVersion)parse(m.apkVersion);if(m.apkUrl)apkUrl(m.apkUrl);if(m.notes&&typeof m.notes!=='string')throw new Error('Manifiesto inválido');return m;}finally{clearTimeout(timeout);}}
+ async function check(manual){if(checking)return checking;checking=(async()=>{if(cfg().DISABLE_UPDATE_CHECK)throw new Error('La comprobación de actualizaciones está desactivada');const remote=await fetchManifest(),local=localAppVersion();parse(local);const apk=localApkVersion(),needApk=!!apk&&cmpVer(remote.apkVersion||remote.version,apk)>0,needWeb=cmpVer(remote.version,local)>0;
+ const iosNative=navigator.userAgent.match(/PingoIOS\/([\w.+-]+)/);const needStore=!!iosNative&&cmpVer(remote.iosVersion||remote.version,iosNative[1])>0;
+ if(!apk&&/Android/.test(navigator.userAgent)&&/; wv\)/.test(navigator.userAgent))throw new Error('Este contenedor antiguo no comunica su versión instalada. No se pudo comprobar el APK.');
+ if(!needApk&&!needWeb&&!needStore)return {status:'current'};
+ const info={status:'available',remote,needApk:!ios()&&needApk,needWeb,needStore,force:!!remote.force,remoteVer:remote.version};
+ if(!manual&&!info.force&&localStorage.getItem('pingo-skip-update')===remote.version)return {...info,status:'skipped'};return info;})();try{return await checking;}finally{checking=null;}}
+ function skip(ver){localStorage.setItem('pingo-skip-update',ver);}
+ function startApkDownload(remote){if(downloading)throw new Error('Ya hay una descarga en curso');if(!localApkVersion()||ios())throw new Error('La instalación APK solo está disponible en Android');const url=apkUrl(remote.apkUrl);if(!/^[a-f0-9]{64}$/i.test(remote.sha256||''))throw new Error('La publicación no incluye una suma SHA-256 válida');if(!g.PingoNative||!g.PingoNative.postMessage)throw new Error('Esta versión requiere instalar manualmente desde el repositorio oficial');downloading=true;g.PingoNative.postMessage(JSON.stringify({url,sha256:remote.sha256}));}
+ function openStore(url){const u=new URL(url);if(u.protocol!=='https:'||u.hostname!=='apps.apple.com'||u.username||u.password)throw new Error('Enlace App Store inválido');location.href=u.href;}
+ g.addEventListener('pingo-download',e=>{if(e.detail.status==='error'||e.detail.status==='ready')downloading=false;});
+ g.PingoUpdater={check,skip,cmpVer,localAppVersion,localApkVersion,startApkDownload,openStore};
 })(window);

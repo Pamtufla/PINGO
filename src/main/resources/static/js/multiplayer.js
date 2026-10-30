@@ -1,256 +1,52 @@
-/* Multiplayer vía Supabase Realtime */
-(function (global) {
-  const CFG = () => global.PINGO_CONFIG || {};
-  let sb = null;
-  let channel = null;
-  let room = null;
-  let playerRow = null;
-  let onPlayers = null;
-  let onRoom = null;
-  let syncTimer = null;
+/* Supabase RPC authority. Every mutation is serialized locally and under a DB room lock. */
+(function(global){
+ const CFG=()=>global.PINGO_CONFIG||{};
+ let sb=null,room=null,playerRow=null,onPlayers=null,onRoom=null,onError=null,timer=null,chain=Promise.resolve(),generation=0;
+ function clientId(){return PingoRules.identity().id;}
+ function enabled(){return !CFG().FORCE_SOLO&&!!(CFG().SUPABASE_URL&&CFG().SUPABASE_ANON_KEY&&global.supabase);}
+ function init(){if(!enabled())return false;if(!sb)sb=global.supabase.createClient(CFG().SUPABASE_URL,CFG().SUPABASE_ANON_KEY);return true;}
+ function accept(s){
+  if(room&&s.room.id===room.id&&s.room.revision<room.revision)return;
+  room=s.room;playerRow=s.players.find(p=>p.client_id===clientId());
+  localStorage.setItem('pingo-remote-crowns',String(s.crowns));
+  if(onPlayers)onPlayers(s.players);if(onRoom)onRoom(room);
+ }
+ function action(kind,data,id){
+  const gen=generation, target=id===undefined?(room&&room.id):id;
+  const run=chain.catch(()=>{}).then(async()=>{
+   if(gen!==generation)throw new Error('Sesión reemplazada');
+   if(!init())throw new Error('Supabase no configurado');
+   const identity=PingoRules.identity();
+   const payload=typeof data==='function'?data():data;
+   const {data:state,error}=await sb.rpc('pingo_action',{p_client:identity.id,p_secret:identity.secret,p_action:kind,p_room:target,p_data:payload||{}});
+   if(error)throw new Error(/pingo_action/.test(error.message)?'Falta aplicar supabase/migration_v2.sql en el servidor.':error.message);
+   if(gen===generation)accept(state);return state;
+  });chain=run;return run;
+ }
+ function poll(){clearInterval(timer);timer=setInterval(()=>{if(room)action('snapshot').catch(e=>{if(onError)onError(e);});},4000);}
+ async function createRoom(size,name,cardCode,need,opts){await action('create',{size,name,codeCard:cardCode,title:opts.title,private:opts.isPrivate,password:opts.password,rules:opts.rules},null);poll();return room;}
+ async function joinRoom(code,name,cardCode,need,password){await action('join',{code,name,codeCard:cardCode,password},null);poll();return room;}
+ async function listRooms(){if(!init())return [];const {data,error}=await sb.from('rooms_lobby').select('*').order('created_at',{ascending:false}).limit(50);if(error)throw error;return data||[];}
+ async function fetchPlayers(){return (await action('snapshot')).players;}
+ async function startRoom(){await action('start');return room;}
+ async function endRoom(){await action('end');return room;}
+ async function saveMatchResults(rows,meta){if(meta.mode!=='room'){const identity=PingoRules.identity();const {data,error}=await sb.rpc('pingo_archive_solo',{p_client:identity.id,p_secret:identity.secret,p_match:meta.matchId,p_result:rows[0]});if(error)throw error;return data;}await action('archive');return {ok:true};}
+ async function isMatchArchived(id){if(!init())return false;const {data,error}=await sb.from('match_archives').select('match_id').eq('match_id',id).maybeSingle();if(error)throw error;return !!data;}
+ async function fetchLeaderboard(limit){
+  if(!init())return [];
+  const {data:matches,error}=await sb.from('match_results').select('match_id,created_at').order('created_at',{ascending:false}).limit(Math.max(limit||100,100));
+  if(error)throw error;if(!matches.length)return [];
+  const ids=[...new Set(matches.map(m=>m.match_id))].slice(0,25),rows=[];
+  for(let offset=0;;offset+=1000){const {data,error}=await sb.from('match_results').select('*').in('match_id',ids).order('id').range(offset,offset+999);if(error)throw error;rows.push(...data);if(data.length<1000)break;}
+  return rows;
+ }
+ async function refreshCrowns(){if(!init())return;const {count,error}=await sb.from('pingo_crowns').select('match_id',{count:'exact',head:true}).eq('client_id',clientId());if(error)throw error;if(count!==null&&count!==undefined)localStorage.setItem('pingo-remote-crowns',String(count));}
 
-  function clientId() {
-    const k = 'pingo-client-id';
-    let id = localStorage.getItem(k);
-    if (!id) {
-      id = (crypto.randomUUID && crypto.randomUUID()) || ('c' + Math.random().toString(16).slice(2) + Date.now().toString(16));
-      localStorage.setItem(k, id);
-    }
-    return id;
-  }
-
-  function enabled() {
-    const c = CFG();
-    return !c.FORCE_SOLO && !!(c.SUPABASE_URL && c.SUPABASE_ANON_KEY && global.supabase);
-  }
-
-  function init() {
-    if (!enabled()) return false;
-    if (sb) return true;
-    sb = global.supabase.createClient(CFG().SUPABASE_URL, CFG().SUPABASE_ANON_KEY, {
-      realtime: { params: { eventsPerSecond: 8 } }
-    });
-    return true;
-  }
-
-  function roomCode() {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let s = '';
-    for (let i = 0; i < 5; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
-    return s;
-  }
-
-  /**
-   * opts: { title, isPrivate, password }
-   */
-  async function createRoom(size, name, cardCode, need, opts) {
-    if (!init()) throw new Error('Supabase no configurado');
-    opts = opts || {};
-    const isPrivate = !!opts.isPrivate;
-    const password = String(opts.password || '').trim();
-    if (isPrivate && password.length < 3) throw new Error('La sala privada necesita contraseña (mín. 3)');
-
-    const code = roomCode();
-    const title = String(opts.title || ('Sala de ' + (name || 'invitado'))).trim().slice(0, 40) || 'Sala';
-    const { data: r, error } = await sb.from('rooms').insert({
-      code,
-      size,
-      status: 'lobby',
-      host_client_id: clientId(),
-      title,
-      is_private: isPrivate,
-      password: isPrivate ? password : null
-    }).select().single();
-    if (error) throw error;
-    room = r;
-    playerRow = await upsertPlayer(name, cardCode, need);
-    await subscribe(r.id);
-    return r;
-  }
-
-  async function joinRoom(code, name, cardCode, needOrFn, password) {
-    if (!init()) throw new Error('Supabase no configurado');
-    const clean = String(code || '').trim().toUpperCase();
-    const { data: r, error } = await sb.from('rooms').select('*').eq('code', clean).maybeSingle();
-    if (error) throw error;
-    if (!r) throw new Error('Sala no encontrada');
-    if (r.status === 'ended') throw new Error('Esta sala ya terminó');
-    if (r.is_private) {
-      const pass = String(password || '').trim();
-      if (!pass) throw new Error('Esta sala es privada. Escribe la contraseña');
-      if (pass !== String(r.password || '')) throw new Error('Contraseña incorrecta');
-    }
-    room = r;
-    const need = typeof needOrFn === 'function' ? needOrFn(r.size) : needOrFn;
-    playerRow = await upsertPlayer(name, cardCode, need);
-    await subscribe(r.id);
-    return r;
-  }
-
-  /** Lista pública+privadas sin devolver password (vista rooms_lobby) */
-  async function listRooms() {
-    if (!init()) return [];
-    const { data, error } = await sb
-      .from('rooms_lobby')
-      .select('id,code,size,status,title,is_private,created_at,player_count')
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (error) throw error;
-    return data || [];
-  }
-
-  async function upsertPlayer(name, cardCode, need) {
-    const payload = {
-      room_id: room.id,
-      client_id: clientId(),
-      name: name || 'invitado',
-      card_code: cardCode,
-      need,
-      found: 0,
-      bingos: 0,
-      retos_ok: 0,
-      retos_paid: 0,
-      updated_at: new Date().toISOString()
-    };
-    const { data, error } = await sb.from('players').upsert(payload, { onConflict: 'room_id,client_id' }).select().single();
-    if (error) throw error;
-    return data;
-  }
-
-  async function fetchPlayers() {
-    if (!room) return [];
-    const { data, error } = await sb.from('players').select('*').eq('room_id', room.id);
-    if (error) throw error;
-    return data || [];
-  }
-
-  async function startRoom() {
-    if (!room) return;
-    const { data, error } = await sb.from('rooms').update({ status: 'live' }).eq('id', room.id).select().single();
-    if (error) throw error;
-    room = data;
-    return data;
-  }
-
-  async function endRoom() {
-    if (!room || !sb) return null;
-    const { data, error } = await sb.from('rooms').update({ status: 'ended' }).eq('id', room.id).select().single();
-    if (error) throw error;
-    room = data;
-    return data;
-  }
-
-  async function saveMatchResults(rows, meta) {
-    if (!init() || !rows || !rows.length) return { ok: false, localOnly: true };
-    const matchId = meta && meta.matchId;
-    if (!matchId) throw new Error('Falta matchId');
-
-    const { error: lockErr } = await sb.from('match_archives').insert({
-      match_id: matchId,
-      room_code: (meta && meta.roomCode) || null,
-      mode: (meta && meta.mode) || 'solo',
-      saved_by: clientId()
-    });
-    if (lockErr) {
-      if (lockErr.code === '23505' || /duplicate|unique/i.test(lockErr.message || '')) {
-        return { ok: false, duplicate: true };
-      }
-      throw lockErr;
-    }
-
-    const { error } = await sb.from('match_results').insert(rows);
-    if (error) throw error;
-    return { ok: true };
-  }
-
-  async function isMatchArchived(matchId) {
-    if (!init() || !matchId) return false;
-    const { data, error } = await sb.from('match_archives').select('match_id').eq('match_id', matchId).maybeSingle();
-    if (error) return false;
-    return !!data;
-  }
-
-  async function fetchLeaderboard(limit) {
-    if (!init()) return [];
-    const { data, error } = await sb
-      .from('match_results')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit || 80);
-    if (error) throw error;
-    return data || [];
-  }
-
-  function getClient() { return sb; }
-
-  function queueSync(stats) {
-    if (!room || !playerRow) return;
-    clearTimeout(syncTimer);
-    syncTimer = setTimeout(() => syncProgress(stats), 180);
-  }
-
-  async function syncProgress(stats) {
-    if (!room || !playerRow || !sb) return;
-    const patch = {
-      found: stats.found,
-      need: stats.need,
-      bingos: stats.bingos,
-      retos_ok: stats.retosOk,
-      retos_paid: stats.retosPaid,
-      last_event: stats.event || null,
-      updated_at: new Date().toISOString()
-    };
-    const { data, error } = await sb.from('players').update(patch).eq('id', playerRow.id).select().single();
-    if (!error && data) playerRow = data;
-  }
-
-  async function subscribe(roomId) {
-    await unsubscribe();
-    channel = sb.channel('room:' + roomId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'room_id=eq.' + roomId }, async () => {
-        const list = await fetchPlayers();
-        if (onPlayers) onPlayers(list);
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'id=eq.' + roomId }, (payload) => {
-        room = payload.new;
-        if (onRoom) onRoom(room);
-      })
-      .subscribe();
-    const list = await fetchPlayers();
-    if (onPlayers) onPlayers(list);
-  }
-
-  async function unsubscribe() {
-    if (channel) {
-      await sb.removeChannel(channel);
-      channel = null;
-    }
-  }
-
-  async function leave() {
-    clearTimeout(syncTimer);
-    if (sb && playerRow) {
-      try { await sb.from('players').delete().eq('id', playerRow.id); } catch (e) {}
-    }
-    await unsubscribe();
-    room = null;
-    playerRow = null;
-  }
-
-  function isHost() {
-    return !!(room && room.host_client_id === clientId());
-  }
-
-  function getRoom() { return room; }
-  function getPlayer() { return playerRow; }
-  function setHandlers(h) {
-    onPlayers = h.onPlayers || null;
-    onRoom = h.onRoom || null;
-  }
-
-  global.PingoMP = {
-    enabled, init, clientId, createRoom, joinRoom, listRooms, fetchPlayers,
-    startRoom, endRoom, saveMatchResults, isMatchArchived, fetchLeaderboard, getClient,
-    queueSync, syncProgress, leave, isHost, getRoom, getPlayer, setHandlers
-  };
+ async function syncProgress(stats){if(!room||!playerRow||!playerRow.card)return;return action('progress',()=>({...stats,revision:playerRow.revision}));}
+ function queueSync(stats){return syncProgress(stats).catch(e=>{if(onError)onError(e);});}
+ async function leave(){clearInterval(timer);try{if(room)await action('leave');}catch(e){if(onError)onError(new Error('Salida local; el servidor detectará la desconexión en 90 segundos.'));}finally{generation++;room=null;playerRow=null;}}
+ global.PingoMP={enabled,init,clientId,createRoom,joinRoom,listRooms,fetchPlayers,startRoom,endRoom,saveMatchResults,isMatchArchived,fetchLeaderboard,
+ getClient:()=>sb,refreshCrowns,queueSync,syncProgress,leave,isHost:()=>!!room&&room.host_client_id===clientId(),getRoom:()=>room,getPlayer:()=>playerRow,
+ setHandlers:h=>{onPlayers=h.onPlayers;onRoom=h.onRoom;onError=h.onError;},
+ setCard:card=>action('card',{card}),swap:index=>action('swap',{index}),startMini:index=>action('mini_start',{index}),answerMini:(id,answer)=>action('mini_answer',{id,answer:String(answer)}),refresh:()=>action('snapshot')};
 })(window);

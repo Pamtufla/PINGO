@@ -47,3 +47,13 @@ Si generas el APK a mano, edita `src/main/resources/static/update.json`:
 ```
 
 Si `force` es `true`, no se puede saltar la actualización.
+
+## Nueva base de actualizaciones verificadas
+
+El workflow ahora publica `sha256` junto al APK. Los APK construidos con esta revisión leen su versión real de `BuildConfig` y verifican HTTPS, SHA-256, paquete, firma y versionCode antes de abrir el instalador. Descargar nunca marca una versión como instalada. La instalación requiere la confirmación y los permisos de Android.
+
+Los APK anteriores no tienen este puente; instalar la nueva base manualmente desde el release oficial. No inventar `sha256`: obtenerlo del APK final firmado (PowerShell: `Get-FileHash pingo.apk -Algorithm SHA256`).
+
+Para iOS configurar `iosVersion` y `appStoreUrl` solo después de disponer del registro oficial. La app no intentará instalar APK en iOS. Ver `ios/README.md`.
+
+La actualización del juego necesita también `supabase/migration_v2.sql`; consultar `docs/IMPLEMENTACION_V2.md` antes del despliegue.
