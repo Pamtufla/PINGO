@@ -17,10 +17,10 @@ concurrency:
 jobs:
   build-and-release:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.head_commit && !contains(github.event.head_commit.message, '[skip apk]')) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -43,7 +43,7 @@ jobs:
           echo "PINGO_WEB_URL=${PINGO_WEB_URL:-https://pingo-halloween.onrender.com}" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -59,7 +59,7 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.9"
 
@@ -101,7 +101,6 @@ jobs:
           SHORT: ${{ steps.ver.outputs.short }}
           NOTES: ${{ steps.ver.outputs.notes }}
         run: |
-          APK_URL="https://github.com/${REPO}/releases/download/${TAG}/pingo.apk"
           python3 <<'PY'
           import json, os, pathlib, re
           ver = os.environ["VER"]
@@ -149,7 +148,7 @@ jobs:
           git push
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pingo-${{ steps.ver.outputs.name }}
           path: dist/*.apk

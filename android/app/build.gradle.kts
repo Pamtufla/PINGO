@@ -57,7 +57,14 @@ android {
     }
 }
 
+// kotlin-stdlib ≥1.8 ya incluye jdk7/jdk8; versiones viejas transitivas duplican clases.
+configurations.configureEach {
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+}
+
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.24")
 }
