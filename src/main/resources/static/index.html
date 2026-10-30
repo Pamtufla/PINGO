@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -22,6 +22,30 @@
 <body>
 <i class="circ" aria-hidden="true"></i>
 <div id="verBadge" class="ver-badge" aria-label="Versión">…</div>
+<button type="button" class="settings-btn" id="openSettings" aria-label="Ajustes">⚙</button>
+<div id="settingsSheet" hidden>
+  <div class="settings-card" role="dialog" aria-labelledby="settingsTitle">
+    <h3 id="settingsTitle">AJUSTES</h3>
+    <p class="tiny">Zoom (solo ampliar · no encoje el layout)</p>
+    <div class="settings-row">
+      <button type="button" class="btn sm" id="zoomOut">−</button>
+      <span id="zoomLevel" class="tiny">100%</span>
+      <button type="button" class="btn sm" id="zoomIn">+</button>
+      <button type="button" class="btn sm ghost" id="zoomReset">TAMAÑO INICIAL</button>
+    </div>
+    <p class="tiny">Copia de seguridad (privada)</p>
+    <div class="settings-row">
+      <button type="button" class="btn sm" id="exportProgress">EXPORTAR</button>
+      <label class="btn sm ghost" style="display:inline-flex;align-items:center;justify-content:center;cursor:pointer">IMPORTAR<input id="importProgress" type="file" accept="application/json" hidden></label>
+    </div>
+    <p class="tiny">Avatar</p>
+    <div id="settingsAvatars"></div>
+    <div class="settings-row">
+      <button type="button" class="btn sm ghost" id="settingsReload">RECARGAR APP</button>
+      <button type="button" class="btn sm ghost" id="settingsClose">CERRAR</button>
+    </div>
+  </div>
+</div>
 
 <!-- PANTALLA: INICIO -->
 <main id="home" class="screen on">
@@ -44,9 +68,6 @@
     <button class="btn ghost" id="goAbout" style="margin-top:8px">CRÉDITOS / CHANGELOG</button>
     <button class="btn ghost" id="goUpdate" style="margin-top:8px">BUSCAR ACTUALIZACIÓN</button>
     <button class="btn ghost" id="goInstallIos" style="margin-top:8px;display:none">INSTALAR EN IPHONE</button>
-    <button class="btn ghost" id="exportProgress">EXPORTAR COPIA PRIVADA</button>
-    <label class="tiny">Restaurar copia <input id="importProgress" type="file" accept="application/json"></label>
-    <p class="tiny">La copia permite recuperar tu perfil. Guárdala en privado.</p>
     <p id="crownCount" aria-live="polite"></p>
     <p class="tiny" id="onlineHint">Sin cuentas. Solo nombre y mala fe.</p>
   </div>
@@ -73,6 +94,8 @@
   <svg class="web" viewBox="0 0 100 100" fill="none" stroke="#f6ecd9" stroke-width="1" aria-hidden="true"><path d="M0 0L100 0M0 0L0 100M0 0L90 55M0 0L55 90M0 0L100 25M0 0L25 100"/><path d="M20 0Q18 18 0 20M40 0Q36 36 0 40M60 0Q54 54 0 60M80 0Q72 72 0 80"/></svg>
   <div class="wrap stack" style="position:relative">
     <h2>¿Cómo te llamas?</h2>
+    <div id="nameAvatar" aria-hidden="true"></div>
+    <button type="button" class="btn sm ghost" id="pickAvatar" style="max-width:220px;margin-bottom:10px">ELEGIR AVATAR</button>
     <label for="nameIn" style="position:absolute;left:-9999px">Tu nombre</label>
     <input id="nameIn" maxlength="20" placeholder="Escribe tu nombre" autocomplete="given-name">
     <p class="or" style="margin:0">Tamaño de la cartilla</p>
@@ -190,7 +213,6 @@
 
     <div class="grid-stage">
       <div class="grid" id="grid" role="group" aria-label="Cartilla de bingo"></div>
-      <section id="miniPanel" hidden aria-live="polite"></section>
     </div>
     <div class="code"><span>Código de cartilla:</span><button id="codeBtn" aria-label="Copiar código de cartilla"></button></div>
     <div class="row">
@@ -281,12 +303,15 @@
     <div class="stack" id="mBtns"></div>
   </div>
 </div>
+<section id="miniPanel" hidden aria-live="polite"></section>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="feed" class="feed" aria-live="polite"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/js/config.js"></script>
 <script src="/js/rules.js"></script>
+<script src="/js/zoom.js"></script>
+<script src="/js/avatars.js"></script>
 <script src="/js/minigames.js"></script>
 <script src="/js/multiplayer.js"></script>
 <script src="/js/chat.js"></script>

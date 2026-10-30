@@ -72,7 +72,7 @@ begin
   v_a:=1+floor(random()*4)::int;
   v_answer:='win';
   if v_a=1 then
-   v_game:=jsonb_build_object('kind','draw','title','Traza al personaje','silhouette',(array['ghost','pacman','mushroom','star','bat','cat','potion','sword'])[1+floor(random()*8)::int],'question','Rellena la silueta con el dedo');
+   v_game:=jsonb_build_object('kind','draw','title','Traza al personaje','silhouette',(array['mario','link','peach','sonic','kirby','pikachu','freddy','chica','bonnie','foxy','luigi','yoshi'])[1+floor(random()*12)::int],'question','Rellena la cara del personaje');
   elsif v_a=2 then
    v_game:=jsonb_build_object('kind','tongue','title','Trabajenguas','tongue',(1+floor(random()*10)::int),'question','Di el trabalenguas en voz alta');
   elsif v_a=3 then

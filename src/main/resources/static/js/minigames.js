@@ -1,15 +1,20 @@
 /* Minijuegos v2: draw / tongue / dash / rhythm — solo el dueño; win local → RPC 'win'. */
 (function(g){
  const KINDS=['draw','tongue','dash','rhythm'];
+ /* Face silhouettes (stylized) for draw-minigame mask — viewBox ~0..140 */
  const SILHOUETTES={
-  ghost:{name:'Fantasma',path:'M40 90 Q40 40 70 30 Q100 40 100 90 L90 90 L85 100 L75 90 L65 100 L55 90 L45 100 L40 90 M55 55 a4 4 0 1 0 .1 0 M85 55 a4 4 0 1 0 .1 0'},
-  pacman:{name:'Pac-Man',path:'M70 70 L120 40 A55 55 0 1 0 120 100 Z'},
-  mushroom:{name:'Champiñón',path:'M40 70 Q70 20 100 70 L100 95 L40 95 Z M55 70 L55 95 M85 70 L85 95'},
-  star:{name:'Estrella',path:'M70 20 L80 55 L115 55 L88 75 L98 110 L70 88 L42 110 L52 75 L25 55 L60 55 Z'},
-  bat:{name:'Murciélago',path:'M70 60 L40 40 L20 55 L40 70 L25 90 L55 75 L70 85 L85 75 L115 90 L100 70 L120 55 L100 40 Z'},
-  cat:{name:'Gato',path:'M45 50 L55 25 L65 50 L75 50 L85 25 L95 50 Q110 80 70 100 Q30 80 45 50 M55 70 a3 3 0 1 0 .1 0 M85 70 a3 3 0 1 0 .1 0'},
-  potion:{name:'Poción',path:'M55 30 L85 30 L80 50 L95 100 L45 100 L60 50 Z M50 75 Q70 90 90 75'},
-  sword:{name:'Espada',path:'M68 20 L72 20 L74 85 L85 90 L85 95 L55 95 L55 90 L66 85 Z M50 88 L90 88'}
+  mario:{name:'Mario',path:'M35 55 Q35 25 70 22 Q105 25 105 55 Q108 95 70 108 Q32 95 35 55 M28 38 Q70 18 112 38 L100 48 Q70 32 40 48 Z M40 72 Q70 88 100 72 Q95 78 70 82 Q45 78 40 72 M48 58 a3 3 0 1 0 .1 0 M90 58 a3 3 0 1 0 .1 0'},
+  link:{name:'Link',path:'M70 20 L95 35 L100 55 Q105 90 70 110 Q35 90 40 55 L45 35 Z M30 50 L18 42 L35 58 M110 50 L122 42 L105 58 M52 60 a3 3 0 1 0 .1 0 M86 60 a3 3 0 1 0 .1 0 M60 78 Q70 84 80 78'},
+  peach:{name:'Peach',path:'M70 28 Q100 30 102 60 Q104 95 70 112 Q36 95 38 60 Q40 30 70 28 M55 18 L70 8 L85 18 L78 28 L62 28 Z M52 58 a2.5 2.5 0 1 0 .1 0 M86 58 a2.5 2.5 0 1 0 .1 0 M58 78 Q70 86 82 78'},
+  sonic:{name:'Sonic',path:'M70 35 Q100 40 102 70 Q100 105 70 112 Q40 105 38 70 Q40 40 70 35 M70 20 L55 5 L60 30 M70 18 L70 2 L78 28 M70 20 L90 5 L82 30 M48 62 a3 3 0 1 0 .1 0 M90 62 a3 3 0 1 0 .1 0 M55 82 Q70 90 85 82'},
+  kirby:{name:'Kirby',path:'M70 30 A40 40 0 1 1 69.9 30 M48 62 a4 4 0 1 0 .1 0 M88 62 a4 4 0 1 0 .1 0 M55 78 Q70 90 85 78 M42 88 A10 8 0 0 0 30 95 M98 88 A10 8 0 0 1 110 95'},
+  pikachu:{name:'Pikachu',path:'M70 40 Q100 42 100 75 Q98 110 70 115 Q42 110 40 75 Q40 42 70 40 M40 40 L28 8 L48 42 M100 40 L112 8 L92 42 M48 70 a3 3 0 1 0 .1 0 M90 70 a3 3 0 1 0 .1 0 M42 78 A8 6 0 1 0 42.1 78 M90 78 A8 6 0 1 0 90.1 78 M60 88 Q70 94 80 88'},
+  freddy:{name:'Freddy',path:'M70 38 Q102 40 104 72 Q102 108 70 115 Q38 108 36 72 Q38 40 70 38 M40 28 A12 12 0 1 1 40.1 28 M100 28 A12 12 0 1 1 100.1 28 M50 68 a3 3 0 1 0 .1 0 M88 68 a3 3 0 1 0 .1 0 M55 88 Q70 98 85 88 M62 78 Q70 84 78 78'},
+  chica:{name:'Chica',path:'M70 42 Q100 45 100 78 Q98 112 70 116 Q42 112 40 78 Q40 45 70 42 M48 30 L70 12 L92 30 L82 42 L58 42 Z M52 70 a3 3 0 1 0 .1 0 M86 70 a3 3 0 1 0 .1 0 M58 88 L70 98 L82 88 Z'},
+  bonnie:{name:'Bonnie',path:'M70 48 Q100 50 100 82 Q98 112 70 116 Q42 112 40 82 Q40 50 70 48 M45 48 L38 8 L52 48 M95 48 L102 8 L88 48 M52 72 a3 3 0 1 0 .1 0 M86 72 a3 3 0 1 0 .1 0 M58 92 Q70 100 82 92'},
+  foxy:{name:'Foxy',path:'M70 45 Q102 48 100 80 Q95 112 70 116 Q45 112 40 80 Q38 48 70 45 M35 40 L18 22 L48 50 M105 40 L122 22 L92 50 M50 70 a2.5 2.5 0 1 0 .1 0 M88 70 a2.5 2.5 0 1 0 .1 0 M55 88 L70 102 L85 88 Z'},
+  luigi:{name:'Luigi',path:'M38 52 Q38 22 70 20 Q102 22 102 52 Q105 98 70 112 Q35 98 38 52 M30 36 Q70 14 110 36 L98 46 Q70 28 42 46 Z M42 70 Q70 86 98 70 Q92 76 70 80 Q48 76 42 70 M50 56 a3 3 0 1 0 .1 0 M88 56 a3 3 0 1 0 .1 0'},
+  yoshi:{name:'Yoshi',path:'M70 40 Q98 44 100 75 Q96 110 70 114 Q44 110 40 75 Q42 44 70 40 M95 70 Q120 65 118 85 Q110 95 92 88 M50 68 a3 3 0 1 0 .1 0 M82 68 a3 3 0 1 0 .1 0 M55 88 Q70 98 80 90'}
  };
  const TONGUES=[
   'Tres tristes tigres tragan trigo en un trigal',
@@ -85,7 +90,7 @@
 
  /* ===== DRAW ===== */
  function playDraw(game,body,status,win){
-  const key=game.silhouette&&SILHOUETTES[game.silhouette]?game.silhouette:'ghost';
+  const key=(game.silhouette&&SILHOUETTES[game.silhouette])?game.silhouette:Object.keys(SILHOUETTES)[Math.floor(Math.random()*Object.keys(SILHOUETTES).length)];
   const meta=SILHOUETTES[key];
   status.textContent='Rellena a '+meta.name+' (≥70%)';
   const wrap=el('div','mini-draw');
@@ -96,16 +101,19 @@
   const ctx=canvas.getContext('2d');
   const mask=document.createElement('canvas');mask.width=280;mask.height=280;
   const mctx=mask.getContext('2d');
-  mctx.fillStyle='#fff';mctx.strokeStyle='#fff';mctx.lineWidth=14;mctx.lineJoin='round';mctx.lineCap='round';
+  mctx.fillStyle='#fff';mctx.strokeStyle='#fff';mctx.lineWidth=12;mctx.lineJoin='round';mctx.lineCap='round';
+  mctx.translate(70,70);mctx.scale(1.35,1.35);mctx.translate(-70,-70);
   const path=new Path2D(meta.path);
   mctx.stroke(path);mctx.fill(path);
+  mctx.setTransform(1,0,0,1,0,0);
   const maskData=mctx.getImageData(0,0,280,280).data;
   let maskTotal=0;for(let i=3;i<maskData.length;i+=4)if(maskData[i]>40)maskTotal++;
   function paintGhost(){
    ctx.clearRect(0,0,280,280);
    ctx.fillStyle='#0a1a10';ctx.fillRect(0,0,280,280);
-   ctx.strokeStyle='rgba(179,255,203,.35)';ctx.lineWidth=10;ctx.lineJoin='round';ctx.stroke(path);
-   ctx.fillStyle='rgba(179,255,203,.08)';ctx.fill(path);
+   ctx.save();ctx.translate(70,70);ctx.scale(1.35,1.35);ctx.translate(-70,-70);
+   ctx.strokeStyle='rgba(179,255,203,.4)';ctx.lineWidth=9;ctx.lineJoin='round';ctx.stroke(path);
+   ctx.fillStyle='rgba(179,255,203,.1)';ctx.fill(path);ctx.restore();
   }
   paintGhost();
   let drawing=false,won=false;

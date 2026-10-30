@@ -1211,6 +1211,27 @@ $('#endMatch').onclick=()=>{
 
 [...$('#modeGrid').children].forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 
+function refreshNameAvatar(){
+  const box=$('#nameAvatar'); if(!box||!window.PingoAvatars) return;
+  box.innerHTML=PingoAvatars.get(PingoAvatars.pick()).svg;
+}
+function openSettings(){
+  const sheet=$('#settingsSheet'); if(!sheet) return;
+  sheet.hidden=false;
+  if(window.PingoAvatars) PingoAvatars.renderPicker($('#settingsAvatars'),()=>{refreshNameAvatar();toast('Avatar guardado');});
+  if(window.PingoZoom) PingoZoom.apply();
+}
+function closeSettings(){const sheet=$('#settingsSheet'); if(sheet) sheet.hidden=true;}
+$('#openSettings')&&($('#openSettings').onclick=openSettings);
+$('#settingsClose')&&($('#settingsClose').onclick=closeSettings);
+$('#settingsSheet')&&($('#settingsSheet').onclick=e=>{if(e.target.id==='settingsSheet')closeSettings();});
+$('#zoomIn')&&($('#zoomIn').onclick=()=>PingoZoom&&PingoZoom.bump(0.15));
+$('#zoomOut')&&($('#zoomOut').onclick=()=>PingoZoom&&PingoZoom.bump(-0.15));
+$('#zoomReset')&&($('#zoomReset').onclick=()=>PingoZoom&&PingoZoom.reset());
+$('#settingsReload')&&($('#settingsReload').onclick=()=>{location.href=location.pathname+'?t='+Date.now();});
+$('#pickAvatar')&&($('#pickAvatar').onclick=()=>{openSettings();toast('Elige un avatar abajo');});
+refreshNameAvatar();
+
 $('#startNamed').onclick=()=>{
   const n=$('#nameIn').value.trim();
   if(!n){toast('Escribe tu nombre');$('#nameIn').focus();return}

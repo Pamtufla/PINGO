@@ -1,10 +1,14 @@
 /* Explicit recovery backup. Contains an installation credential: keep the file private. */
 (function(){
- const keys=['pingo-identity-v2','pingo-crowns-v2','pingo-remote-crowns','pingo-history-v1','bingo-halloween-v1','pingo-client-id'];
- document.getElementById('exportProgress').onclick=()=>{
+ const keys=['pingo-identity-v2','pingo-crowns-v2','pingo-remote-crowns','pingo-history-v1','bingo-halloween-v1','pingo-client-id','pingo-avatar','pingo-zoom-scale'];
+ function bindBackup(){
+  const exp=document.getElementById('exportProgress');
+  const imp=document.getElementById('importProgress');
+  if(!exp||!imp||exp.dataset.bound)return;exp.dataset.bound='1';
+  exp.onclick=()=>{
   try{PingoRules.identity();const data={format:'pingo-backup',version:1,values:Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]))};if(typeof st!=='undefined'&&st)data.values['bingo-halloween-v1']=JSON.stringify(st);const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='pingo-copia-privada.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){alert('No se pudo exportar: '+e.message)}
  };
- document.getElementById('importProgress').onchange=async event=>{
+  imp.onchange=async event=>{
   try{
    if(PingoMP.getRoom())throw new Error('Sal de la sala antes de restaurar');
    const file=event.target.files[0];if(!file)return;if(file.size>5e6)throw new Error('Copia demasiado grande');
@@ -25,4 +29,6 @@
    location.reload();
   }catch(e){alert('No se pudo restaurar: '+e.message)}finally{event.target.value=''}
  };
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bindBackup);else bindBackup();
 })();

@@ -6,17 +6,15 @@ import androidx.webkit.WebViewFeature;
 import java.util.Collections;
 import org.json.JSONObject;
 import android.annotation.SuppressLint;
-import android.app.DownloadManager;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.PermissionRequest;
-import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -42,6 +40,14 @@ public class MainActivity extends AppCompatActivity {
         webView = new WebView(this);
         setContentView(webView);
 
+        SharedPreferences prefs = getSharedPreferences("pingo", MODE_PRIVATE);
+        int lastCode = prefs.getInt("apk_version_code", -1);
+        int curCode = BuildConfig.VERSION_CODE;
+        boolean freshInstallOrUpdate = lastCode != curCode;
+        if (freshInstallOrUpdate) {
+            prefs.edit().putInt("apk_version_code", curCode).putString("apk_version_name", BuildConfig.VERSION_NAME).apply();
+        }
+
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setUserAgentString(s.getUserAgentString()+" PingoAndroid/"+BuildConfig.VERSION_NAME);
@@ -62,10 +68,11 @@ public class MainActivity extends AppCompatActivity {
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        // Pinch zoom without layout reflow / zoom buttons.
-        s.setSupportZoom(true);
-        s.setBuiltInZoomControls(true);
+        // After an APK update, never serve stale shell assets from the WebView cache.
+        s.setCacheMode(freshInstallOrUpdate ? WebSettings.LOAD_NO_CACHE : WebSettings.LOAD_DEFAULT);
+        // Layout locked to viewport; pinch zoom handled in the web app (scale >= 1 only).
+        s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
         s.setDisplayZoomControls(false);
         s.setUseWideViewPort(true);
         s.setLoadWithOverviewMode(true);
@@ -75,6 +82,12 @@ public class MainActivity extends AppCompatActivity {
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+
+        if (freshInstallOrUpdate) {
+            webView.clearCache(true);
+            webView.clearHistory();
+            webView.clearFormData();
+        }
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -143,10 +156,12 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        if (savedInstanceState != null) {
+        // Never restore a pre-update WebView snapshot (causes mixed old/new JS bugs).
+        if (savedInstanceState != null && !freshInstallOrUpdate) {
             webView.restoreState(savedInstanceState);
         } else {
-            webView.loadUrl(BuildConfig.WEB_URL);
+            String sep = BuildConfig.WEB_URL.contains("?") ? "&" : "?";
+            webView.loadUrl(BuildConfig.WEB_URL + sep + "apk=" + Uri.encode(BuildConfig.VERSION_NAME) + "&vc=" + curCode + "&t=" + System.currentTimeMillis());
         }
     }
 

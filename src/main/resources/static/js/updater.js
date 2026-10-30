@@ -24,6 +24,18 @@
   if(remote&&remote.iosIpaUrl)return {kind:'ipa',url:remote.iosIpaUrl,title:'Descargar IPA'};
   return {kind:'safari',url:null,title:'Añadir a pantalla de inicio'};
  }
- g.addEventListener('pingo-download',e=>{if(e.detail.status==='error'||e.detail.status==='ready')downloading=false;});
+ g.addEventListener('pingo-download',e=>{
+  if(e.detail.status==='error'||e.detail.status==='ready')downloading=false;
+  if(e.detail.status==='ready'){
+   try{localStorage.setItem('pingo-pending-apk-reload','1');}catch(err){}
+  }
+ });
+ // After an APK update, native shell bumps User-Agent; force a clean document load once.
+ try{
+  const apk=localApkVersion();
+  const prev=localStorage.getItem('pingo-last-apk-ua');
+  if(apk&&prev&&prev!==apk){localStorage.setItem('pingo-last-apk-ua',apk);localStorage.removeItem('pingo-pending-apk-reload');location.replace(location.pathname+'?fresh='+encodeURIComponent(apk)+'&t='+Date.now());}
+  else if(apk) localStorage.setItem('pingo-last-apk-ua',apk);
+ }catch(err){}
  g.PingoUpdater={check,skip,cmpVer,localAppVersion,localApkVersion,startApkDownload,openStore,ios,iosNativeVersion,isIosSafari,iosInstallHint};
 })(window);

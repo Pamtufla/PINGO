@@ -1,7 +1,7 @@
 # Minijuegos v2 — diseño
 
 Fecha: 2026-10-29  
-Estado: pendiente de revisión del usuario  
+Estado: aprobado e implementado  
 Alcance: sustituir quiz/odd por minijuegos interactivos; validación en cliente; dueño de casilla únicamente.
 
 ## Objetivos
