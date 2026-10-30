@@ -1,9 +1,11 @@
 {
-  "version": "1.2.4",
-  "apkVersion": "1.2.4",
-  "build": "d92e616",
+  "version": "1.2.5",
+  "apkVersion": "1.2.5",
+  "iosVersion": "1.2.5",
+  "build": "647c176",
   "force": false,
-  "apkUrl": "https://github.com/Pamtufla/PINGO/releases/download/v1.2.4/pingo.apk",
-  "sha256": "9152740cc2350540c84710d5169576286b02e21c0680198c2c62a5fad9671a85",
-  "notes": "Activa Pingo v2: RPC en Supabase, historial completo, updater e iOS."
+  "apkUrl": "https://github.com/Pamtufla/PINGO/releases/download/v1.2.5/pingo.apk",
+  "sha256": "e25d41d176b568150b3318a7b9bafd2ec9bed136aa43dd93c0b26bd3a6bec7cb",
+  "notes": "mejora de minijuegos w",
+  "iosInstall": "safari-home"
 }
