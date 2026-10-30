@@ -1,8 +1,9 @@
 {
-  "version": "1.2.3",
-  "apkVersion": "1.2.3",
-  "build": "4edbe57",
+  "version": "1.2.4",
+  "apkVersion": "1.2.4",
+  "build": "d92e616",
   "force": false,
-  "apkUrl": "https://github.com/Pamtufla/PINGO/releases/download/v1.2.3/pingo.apk",
-  "notes": "otra prueba de actions"
+  "apkUrl": "https://github.com/Pamtufla/PINGO/releases/download/v1.2.4/pingo.apk",
+  "sha256": "9152740cc2350540c84710d5169576286b02e21c0680198c2c62a5fad9671a85",
+  "notes": "Activa Pingo v2: RPC en Supabase, historial completo, updater e iOS."
 }
