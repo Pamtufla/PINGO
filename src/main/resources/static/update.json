@@ -1,8 +1,8 @@
 {
-  "version": "1.2.0",
-  "apkVersion": "1.2.0",
-  "build": "0dbed3e",
+  "version": "1.2.3",
+  "apkVersion": "1.2.3",
+  "build": "4edbe57",
   "force": false,
-  "apkUrl": "",
-  "notes": "Chat de voz, salas públicas/privadas, ranking histórico y más."
+  "apkUrl": "https://github.com/Pamtufla/PINGO/releases/download/v1.2.3/pingo.apk",
+  "notes": "otra prueba de actions"
 }
