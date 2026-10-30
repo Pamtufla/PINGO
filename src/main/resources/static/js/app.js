@@ -69,10 +69,12 @@ const POOL = [...new Set(BANK)];
 const RPOOL = [...new Set(RETOS)];
 let st = null, G = null, LINES = [], pick = CONFIG.DEFAULT_SIZE;
 let playMode = 'solo'; // solo | host | join
+let roomVisibility = 'public'; // public | private
 let tutStep = 0;
 let rivals = [];
 let lastRankOrder = [];
 let busy = false;
+let serverCache = [];
 let pendingResults = null; // { matchId, mode, roomCode, size, rows }
 let resultsLocked = false;
 let histTab = 'top';
@@ -180,12 +182,87 @@ function setMode(mode){
     const on=b.dataset.mode===mode;
     b.classList.toggle('on',on);
   });
-  const roomIn=$('#roomIn');
-  roomIn.style.display = mode==='join' ? '' : 'none';
-  if(mode==='join') roomIn.focus();
+  const host=$('#hostOpts'), join=$('#joinOpts');
+  if(host) host.style.display = mode==='host' ? '' : 'none';
+  if(join) join.style.display = mode==='join' ? '' : 'none';
+  if(mode==='join'){
+    refreshServerList();
+    $('#roomIn') && $('#roomIn').focus();
+  }
+  if(mode==='host'){
+    if(!$('#roomTitle').value.trim()){
+      const n=$('#nameIn').value.trim();
+      $('#roomTitle').placeholder = n ? ('Sala de '+n) : 'Nombre de la sala';
+    }
+    syncHostPassVisibility();
+  }
   // En join el tamaño lo impone la sala
   $('#sizes').style.opacity = mode==='join' ? '.45' : '1';
   $('#sizes').style.pointerEvents = mode==='join' ? 'none' : '';
+}
+function setVisibility(v){
+  roomVisibility=v;
+  $('#visPublic').classList.toggle('on', v==='public');
+  $('#visPrivate').classList.toggle('on', v==='private');
+  syncHostPassVisibility();
+}
+function syncHostPassVisibility(){
+  const pass=$('#roomPass');
+  if(!pass) return;
+  pass.style.display = roomVisibility==='private' ? '' : 'none';
+  if(roomVisibility!=='private') pass.value='';
+}
+async function refreshServerList(){
+  const list=$('#serverList'), empty=$('#serverEmpty');
+  if(!list) return;
+  list.innerHTML='<li class="tiny" style="text-align:center">Cargando…</li>';
+  empty.style.display='none';
+  if(!onlineOk()){
+    list.innerHTML='';
+    empty.style.display='';
+    empty.textContent='Configura Supabase para ver servidores.';
+    return;
+  }
+  try{
+    serverCache = await PingoMP.listRooms();
+    renderServerList(serverCache);
+  }catch(e){
+    console.error(e);
+    list.innerHTML='';
+    empty.style.display='';
+    empty.textContent=e.message||'No se pudo cargar la lista';
+  }
+}
+function renderServerList(rows){
+  const list=$('#serverList'), empty=$('#serverEmpty');
+  list.innerHTML='';
+  if(!rows || !rows.length){
+    empty.style.display='';
+    empty.textContent='No hay salas abiertas.';
+    return;
+  }
+  empty.style.display='none';
+  rows.forEach(r=>{
+    const li=document.createElement('li');
+    li.className='server-row'+(r.is_private?' private':'');
+    const lock=r.is_private?'🔒 ':'';
+    const st=r.status==='live'?'EN JUEGO':'LOBBY';
+    li.innerHTML=
+      '<span class="role">'+lock+escapeHtml(r.title||'Sala')+' · '+r.size+'×'+r.size+'</span>'+
+      '<span class="name">'+escapeHtml(r.code)+' · '+(r.player_count||0)+' jug. · '+st+'</span>';
+    li.onclick=()=>{
+      $('#roomIn').value=r.code;
+      if(r.is_private){
+        $('#joinPass').style.display='';
+        $('#joinPass').focus();
+        toast('Sala privada: escribe la contraseña');
+      }else{
+        $('#joinPass').value='';
+        toast('Sala '+r.code+' seleccionada');
+      }
+    };
+    list.append(li);
+  });
 }
 
 /* ===== JUEGO ===== */
@@ -603,11 +680,13 @@ async function afterResultsDecision(){
   pendingResults=null;
   try{localStorage.removeItem(CONFIG.STORAGE_KEY)}catch(e){}
   st=null;
+  await stopRoomChat();
   if(PingoMP.getRoom && PingoMP.getRoom()){
     try{ await PingoMP.leave(); }catch(e){}
   }
   rivals=[]; lastRankOrder=[]; resultsLocked=false;
   $('#liveBoard').style.display='none';
+  const dock=$('#chatDockGame'); if(dock) dock.style.display='none';
 }
 function groupMatches(rows){
   const map=new Map();
@@ -712,11 +791,15 @@ async function renderHistory(){
 function enterLobby(){
   const r=PingoMP.getRoom();
   if(!r) return;
-  $('#lobbyCode').textContent=r.code;
+  $('#lobbyTitle').textContent=r.title||'SALA';
+  $('#lobbyCode').textContent=r.code+(r.is_private?' 🔒':'');
+  $('#lobbyMeta').textContent=
+    (r.is_private?'Privada':'Pública')+' · '+r.size+'×'+r.size+' · sin límite de jugadores';
   const host=PingoMP.isHost();
   $('#lobbyStart').style.display=host?'':'none';
   $('#lobbyWaitHost').style.display=host?'none':'';
   $('#lobbyStatus').textContent=r.status==='live'?'Partida en curso':'Esperando jugadores…';
+  startRoomChat();
   show('lobby');
 }
 
@@ -728,6 +811,9 @@ function enterGameFromRoom(){
     st={name:p.name,size:r.size,code:p.card_code,cells:[],marked:[],bingos:[],how:{},room:r.code};
     setSize(r.size); fresh(p.card_code);
   }
+  const dock=$('#chatDockGame');
+  if(dock) dock.style.display = PingoMP.getRoom() ? '' : 'none';
+  startRoomChat();
   show('game'); update();
 }
 
@@ -757,19 +843,24 @@ async function begin(name){
       const n=(p&&p.size)||pick;
       setSize(n);
       const card=p?p.code:randCode();
+      const title=($('#roomTitle').value||'').trim() || ('Sala de '+(name||'invitado'));
+      const isPrivate=roomVisibility==='private';
+      const password=($('#roomPass').value||'').trim();
+      if(isPrivate && password.length<3){toast('Contraseña de al menos 3 caracteres');$('#roomPass').focus();return}
       st={name:name||'invitado',size:n,code:card,cells:[],marked:[],bingos:[],how:{}};
       fresh(card);
-      await PingoMP.createRoom(n, st.name, card, G.NEED);
+      await PingoMP.createRoom(n, st.name, card, G.NEED, { title, isPrivate, password });
       enterLobby();
-      toast('Sala creada');
+      toast(isPrivate?'Sala privada creada':'Sala pública creada');
       return;
     }
 
     // join
     const roomCode=$('#roomIn').value;
-    if(!roomCode.trim()){toast('Escribe el código de la sala');$('#roomIn').focus();return}
+    if(!roomCode.trim()){toast('Elige una sala de la lista o escribe el código');$('#roomIn').focus();return}
+    const joinPass=($('#joinPass').value||'').trim();
     const card=p?p.code:randCode();
-    const room=await PingoMP.joinRoom(roomCode, name||'invitado', card, size=>geo(size).NEED);
+    const room=await PingoMP.joinRoom(roomCode, name||'invitado', card, size=>geo(size).NEED, joinPass);
     setSize(room.size);
     st={name:name||'invitado',size:room.size,code:card,cells:[],marked:[],bingos:[],how:{},room:room.code};
     fresh(card);
@@ -805,17 +896,133 @@ function confirmNew(fn){
 }
 
 async function leaveRoom(){
+  await stopRoomChat();
   await PingoMP.leave();
   rivals=[]; lastRankOrder=[];
   $('#liveBoard').style.display='none';
+  const dock=$('#chatDockGame'); if(dock) dock.style.display='none';
   goHome();
 }
 
+/* ===== CHAT TEXTO + VOZ PTT ===== */
+let chatStartedFor = null;
+function appendChatLine(payload){
+  const me=PingoMP.clientId();
+  ['chatLogLobby','chatLogGame'].forEach(id=>{
+    const log=document.getElementById(id);
+    if(!log) return;
+    const div=document.createElement('div');
+    div.className='chat-line'+(payload.from===me?' me':'');
+    div.innerHTML='<span class="who">'+escapeHtml(payload.name||'?')+':</span>'+escapeHtml(payload.text||'');
+    log.append(div);
+    log.scrollTop=log.scrollHeight;
+  });
+}
+function setTalkHint(who,on,name){
+  const me=PingoMP.clientId();
+  const label = on ? ((who===me?'Tú':(name||'Alguien'))+' hablando…') : '';
+  const a=$('#talkHintLobby'), b=$('#talkHintGame');
+  if(a) a.textContent=label;
+  if(b) b.textContent=label;
+}
+async function startRoomChat(){
+  const r=PingoMP.getRoom();
+  if(!r || !window.PingoChat) return;
+  if(chatStartedFor===r.id) return;
+  chatStartedFor=r.id;
+  PingoChat.setHandlers({
+    onChat: appendChatLine,
+    onTalk: (who,on,name)=>setTalkHint(who,on,name)
+  });
+  try{
+    await PingoChat.join(r.id, (st&&st.name)||'invitado');
+  }catch(e){
+    console.warn(e);
+    toast('Chat/voz no disponible');
+  }
+}
+async function stopRoomChat(){
+  chatStartedFor=null;
+  setTalkHint(null,false);
+  if(window.PingoChat){
+    try{ await PingoChat.leave(); }catch(e){}
+  }
+  ['chatLogLobby','chatLogGame'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.innerHTML='';
+  });
+}
+function sendChatFrom(inputId){
+  const el=$(inputId); if(!el) return;
+  const ok=PingoChat && PingoChat.sendText(el.value);
+  if(ok) el.value='';
+  else toast('No se pudo enviar');
+}
+function bindMic(btn){
+  if(!btn || btn._micBound) return;
+  btn._micBound=true;
+  const down=async(e)=>{
+    e.preventDefault();
+    if(btn._held) return;
+    btn._held=true;
+    btn.classList.add('hot');
+    try{ await PingoChat.setTalking(true); }
+    catch(err){ toast(err.message||'Micrófono bloqueado'); btn.classList.remove('hot'); btn._held=false; }
+  };
+  const up=async(e)=>{
+    if(e) e.preventDefault();
+    if(!btn._held) return;
+    btn._held=false;
+    btn.classList.remove('hot');
+    try{ await PingoChat.setTalking(false); }catch(err){}
+  };
+  btn.addEventListener('pointerdown', down);
+  btn.addEventListener('pointerup', up);
+  btn.addEventListener('pointercancel', up);
+  btn.addEventListener('pointerleave', up);
+  btn.addEventListener('contextmenu', e=>e.preventDefault());
+}
+
 /* ===== CRÉDITOS / CHANGELOG ===== */
+async function checkForUpdates(manual){
+  if(!window.PingoUpdater) return;
+  try{
+    const info=await PingoUpdater.check();
+    if(!info){
+      if(manual) toast('Ya tienes la última versión (v'+PingoUpdater.localAppVersion()+')');
+      return;
+    }
+    const r=info.remote||{};
+    const notes=r.notes||'Hay una versión nueva de Pingo.';
+    const ver=info.remoteVer||r.version||'?';
+    const extra=document.createElement('p');
+    extra.className='note';
+    extra.textContent='Nueva: v'+ver+(r.build?' · '+r.build:'')+
+      (info.needApk?' · Se descargará el APK.':' · Puedes recargar el contenido.');
+    const btns=[];
+    if(info.needApk && r.apkUrl){
+      btns.push(['DESCARGAR APK','',()=>{
+        PingoUpdater.startApkDownload(r.apkUrl);
+        PingoUpdater.markApkInstalled(r.apkVersion||ver);
+        toast('Descargando APK… Instálalo y vuelve a abrir');
+      }]);
+    }else if(info.needWeb){
+      btns.push(['ACTUALIZAR AHORA','',()=>{ location.reload(); }]);
+    }
+    if(!info.force){
+      btns.push(['MÁS TARDE','ghost',()=>PingoUpdater.skip(ver)]);
+    }
+    if(!btns.length) btns.push(['OK','',null]);
+    modal({emoji:'bolt pk bolt',title:'¡NUEVA VERSIÓN!',text:notes,extra,btns});
+  }catch(e){
+    console.warn(e);
+    if(manual) toast(e.message||'No se pudo revisar actualizaciones');
+  }
+}
+
 function openAbout(){
   const about=window.PINGO_ABOUT;
   if(!about){toast('No se cargó changelog.js');return}
-  $('#aboutVersion').textContent=about.app+' · build '+about.version+' · '+about.year;
+  $('#aboutVersion').textContent=about.app+' · v'+(about.appVersion||'?')+' · build '+about.version+' · '+about.year;
   const credits=$('#creditsList'); credits.innerHTML='';
   (about.credits||[]).forEach(c=>{
     const li=document.createElement('li');
@@ -844,8 +1051,19 @@ function showAboutTab(tab){
 
 /* ===== EVENTOS ===== */
 document.title=CONFIG.APP_NAME;
+(function initVersionBadge(){
+  const b=$('#verBadge'); if(!b) return;
+  const a=window.PINGO_ABOUT||{};
+  const ver=a.appVersion||a.version||'dev';
+  const build=a.version||'';
+  b.textContent='v'+ver;
+  b.title='App '+ver+(build?' · build '+build:'');
+})();
 $('#sizes').append(sizePicker(pick,n=>pick=n));
 setMode('solo');
+$('#visPublic').onclick=()=>setVisibility('public');
+$('#visPrivate').onclick=()=>setVisibility('private');
+$('#refreshServers').onclick=()=>refreshServerList();
 
 $('#goPlay').onclick=()=>{
   if(!tutorialDone()) openTutorial(true);
@@ -853,6 +1071,7 @@ $('#goPlay').onclick=()=>{
 };
 $('#goHistory').onclick=()=>openHistory();
 $('#goAbout').onclick=()=>openAbout();
+$('#goUpdate').onclick=()=>checkForUpdates(true);
 $('#goTutorial').onclick=()=>openTutorial(false);
 $('#tabCredits').onclick=()=>showAboutTab('credits');
 $('#tabChangelog').onclick=()=>showAboutTab('changelog');
@@ -915,8 +1134,17 @@ $('#lobbyStart').onclick=async()=>{
 };
 $('#lobbyLeave').onclick=leaveRoom;
 
+$('#chatSendLobby').onclick=()=>sendChatFrom('#chatInLobby');
+$('#chatSendGame').onclick=()=>sendChatFrom('#chatInGame');
+$('#chatInLobby').addEventListener('keydown',e=>{if(e.key==='Enter')sendChatFrom('#chatInLobby')});
+$('#chatInGame').addEventListener('keydown',e=>{if(e.key==='Enter')sendChatFrom('#chatInGame')});
+bindMic($('#micLobby'));
+bindMic($('#micGame'));
+
 /* ===== ARRANQUE ===== */
 if(onlineOk()) PingoMP.init();
 st=load();
 if(st){setSize(st.size);renderGrid();update();show('game')}
 refreshHome();
+// Revisa update.json (APK fuera de Play Store)
+setTimeout(()=>checkForUpdates(false), 900);

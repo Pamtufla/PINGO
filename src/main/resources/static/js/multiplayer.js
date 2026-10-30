@@ -3,8 +3,8 @@
   const CFG = () => global.PINGO_CONFIG || {};
   let sb = null;
   let channel = null;
-  let room = null;       // { id, code, size, status, host_client_id }
-  let playerRow = null;  // fila players
+  let room = null;
+  let playerRow = null;
   let onPlayers = null;
   let onRoom = null;
   let syncTimer = null;
@@ -40,14 +40,26 @@
     return s;
   }
 
-  async function createRoom(size, name, cardCode, need) {
+  /**
+   * opts: { title, isPrivate, password }
+   */
+  async function createRoom(size, name, cardCode, need, opts) {
     if (!init()) throw new Error('Supabase no configurado');
+    opts = opts || {};
+    const isPrivate = !!opts.isPrivate;
+    const password = String(opts.password || '').trim();
+    if (isPrivate && password.length < 3) throw new Error('La sala privada necesita contraseña (mín. 3)');
+
     const code = roomCode();
+    const title = String(opts.title || ('Sala de ' + (name || 'invitado'))).trim().slice(0, 40) || 'Sala';
     const { data: r, error } = await sb.from('rooms').insert({
       code,
       size,
       status: 'lobby',
-      host_client_id: clientId()
+      host_client_id: clientId(),
+      title,
+      is_private: isPrivate,
+      password: isPrivate ? password : null
     }).select().single();
     if (error) throw error;
     room = r;
@@ -56,18 +68,35 @@
     return r;
   }
 
-  async function joinRoom(code, name, cardCode, needOrFn) {
+  async function joinRoom(code, name, cardCode, needOrFn, password) {
     if (!init()) throw new Error('Supabase no configurado');
     const clean = String(code || '').trim().toUpperCase();
     const { data: r, error } = await sb.from('rooms').select('*').eq('code', clean).maybeSingle();
     if (error) throw error;
     if (!r) throw new Error('Sala no encontrada');
     if (r.status === 'ended') throw new Error('Esta sala ya terminó');
+    if (r.is_private) {
+      const pass = String(password || '').trim();
+      if (!pass) throw new Error('Esta sala es privada. Escribe la contraseña');
+      if (pass !== String(r.password || '')) throw new Error('Contraseña incorrecta');
+    }
     room = r;
     const need = typeof needOrFn === 'function' ? needOrFn(r.size) : needOrFn;
     playerRow = await upsertPlayer(name, cardCode, need);
     await subscribe(r.id);
     return r;
+  }
+
+  /** Lista pública+privadas sin devolver password (vista rooms_lobby) */
+  async function listRooms() {
+    if (!init()) return [];
+    const { data, error } = await sb
+      .from('rooms_lobby')
+      .select('id,code,size,status,title,is_private,created_at,player_count')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return data || [];
   }
 
   async function upsertPlayer(name, cardCode, need) {
@@ -111,13 +140,11 @@
     return data;
   }
 
-  /** Guarda histórico. En salas solo el primero (anfitrión) gana el candado match_archives. */
   async function saveMatchResults(rows, meta) {
     if (!init() || !rows || !rows.length) return { ok: false, localOnly: true };
     const matchId = meta && meta.matchId;
     if (!matchId) throw new Error('Falta matchId');
 
-    // Candado: 1 fila por match_id → evita duplicados si varios intentan guardar
     const { error: lockErr } = await sb.from('match_archives').insert({
       match_id: matchId,
       room_code: (meta && meta.roomCode) || null,
@@ -125,7 +152,6 @@
       saved_by: clientId()
     });
     if (lockErr) {
-      // 23505 = unique_violation
       if (lockErr.code === '23505' || /duplicate|unique/i.test(lockErr.message || '')) {
         return { ok: false, duplicate: true };
       }
@@ -223,7 +249,7 @@
   }
 
   global.PingoMP = {
-    enabled, init, clientId, createRoom, joinRoom, fetchPlayers,
+    enabled, init, clientId, createRoom, joinRoom, listRooms, fetchPlayers,
     startRoom, endRoom, saveMatchResults, isMatchArchived, fetchLeaderboard, getClient,
     queueSync, syncProgress, leave, isHost, getRoom, getPlayer, setHandlers
   };

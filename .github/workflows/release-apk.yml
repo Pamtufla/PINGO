@@ -1,0 +1,148 @@
+# En cada push a main: construye APK, publica GitHub Release y actualiza update.json.
+# Commits con [skip apk] (p. ej. el bot que escribe update.json) no disparan otro ciclo.
+name: Release APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-apk-main
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.head_commit && !contains(github.event.head_commit.message, '[skip apk]')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set version
+        id: ver
+        run: |
+          CODE="${{ github.run_number }}"
+          # 1.2.<run_number> — alineado con la serie actual
+          NAME="1.2.${CODE}"
+          SHORT="$(git rev-parse --short HEAD)"
+          NOTES="$(git log -1 --pretty=%s)"
+          echo "code=${CODE}" >> "$GITHUB_OUTPUT"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${NAME}" >> "$GITHUB_OUTPUT"
+          echo "short=${SHORT}" >> "$GITHUB_OUTPUT"
+          echo "notes=${NOTES}" >> "$GITHUB_OUTPUT"
+          echo "VERSION_CODE=${CODE}" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=${NAME}" >> "$GITHUB_ENV"
+          echo "PINGO_WEB_URL=${PINGO_WEB_URL:-https://pingo-halloween.onrender.com}" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build release APK
+        working-directory: android
+        run: gradle assembleRelease --no-daemon
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          SRC=$(ls android/app/build/outputs/apk/release/*.apk | head -n1)
+          cp "$SRC" dist/pingo.apk
+          cp "$SRC" "dist/pingo-${{ steps.ver.outputs.name }}.apk"
+          ls -la dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Pingo ${{ steps.ver.outputs.name }}
+          body: |
+            **Versión:** `${{ steps.ver.outputs.name }}`
+            **Commit:** `${{ steps.ver.outputs.short }}`
+            **Notas:** ${{ steps.ver.outputs.notes }}
+
+            Instala `pingo.apk` (permite apps de orígenes desconocidos).
+            Si ya tenías un APK de WebIntoApp, desinstálalo primero (firma distinta).
+          files: |
+            dist/pingo.apk
+            dist/pingo-${{ steps.ver.outputs.name }}.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+      - name: Update update.json + changelog versions
+        env:
+          REPO: ${{ github.repository }}
+          VER: ${{ steps.ver.outputs.name }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          SHORT: ${{ steps.ver.outputs.short }}
+          NOTES: ${{ steps.ver.outputs.notes }}
+        run: |
+          APK_URL="https://github.com/${REPO}/releases/download/${TAG}/pingo.apk"
+          python3 <<'PY'
+          import json, os, pathlib, re
+          ver = os.environ["VER"]
+          short = os.environ["SHORT"]
+          notes = os.environ["NOTES"]
+          apk = f"https://github.com/{os.environ['REPO']}/releases/download/{os.environ['TAG']}/pingo.apk"
+          path = pathlib.Path("src/main/resources/static/update.json")
+          data = {
+            "version": ver,
+            "apkVersion": ver,
+            "build": short,
+            "force": False,
+            "apkUrl": apk,
+            "notes": notes or f"Release {ver}",
+          }
+          path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          cl = pathlib.Path("src/main/resources/static/js/changelog.js")
+          text = cl.read_text(encoding="utf-8")
+          text = re.sub(r"appVersion:\s*'[^']*'", f"appVersion: '{ver}'", text, count=1)
+          text = re.sub(r"apkVersion:\s*'[^']*'", f"apkVersion: '{ver}'", text, count=1)
+          text = re.sub(r"version:\s*'[^']*'", f"version: '{short}'", text, count=1)
+          cl.write_text(text, encoding="utf-8")
+          vp = pathlib.Path("android/version.properties")
+          vp.write_text(
+            f"VERSION_CODE={os.environ.get('VERSION_CODE', '1')}\n"
+            f"VERSION_NAME={ver}\n"
+            f"PINGO_WEB_URL={os.environ.get('PINGO_WEB_URL', 'https://pingo-halloween.onrender.com')}\n",
+            encoding="utf-8",
+          )
+          print("update.json ->", data)
+          PY
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/resources/static/update.json \
+                  src/main/resources/static/js/changelog.js \
+                  android/version.properties
+          if git diff --cached --quiet; then
+            echo "No version file changes"
+            exit 0
+          fi
+          git commit -m "chore(release): v${{ steps.ver.outputs.name }} [skip apk]"
+          git push
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pingo-${{ steps.ver.outputs.name }}
+          path: dist/*.apk

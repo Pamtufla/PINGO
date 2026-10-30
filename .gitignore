@@ -36,3 +36,15 @@ build/
 .env
 .env.local
 *.pem
+
+### Android ###
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+android/*.iml
+# El wrapper se genera en CI; si lo generas local, puedes commitearlo
+android/gradle/wrapper/gradle-wrapper.jar
+

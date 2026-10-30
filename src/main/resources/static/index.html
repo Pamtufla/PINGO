@@ -18,6 +18,7 @@
 </head>
 <body>
 <i class="circ" aria-hidden="true"></i>
+<div id="verBadge" class="ver-badge" aria-label="Versión">…</div>
 
 <!-- PANTALLA: INICIO -->
 <main id="home" class="screen on">
@@ -38,6 +39,7 @@
     <button class="btn ghost" id="goHistory" style="margin-top:8px">HISTÓRICO / RANKING</button>
     <button class="btn ghost" id="goTutorial" style="margin-top:8px">¿CÓMO SE JUEGA?</button>
     <button class="btn ghost" id="goAbout" style="margin-top:8px">CRÉDITOS / CHANGELOG</button>
+    <button class="btn ghost" id="goUpdate" style="margin-top:8px">BUSCAR ACTUALIZACIÓN</button>
     <p class="tiny" id="onlineHint">Sin cuentas. Solo nombre y mala fe.</p>
   </div>
 </main>
@@ -79,12 +81,38 @@
       </button>
       <button type="button" class="mode" data-mode="join" id="modeJoin">
         <strong>UNIRSE</strong>
-        <small>Entra con código</small>
+        <small>Lista o código</small>
       </button>
     </div>
 
-    <label for="roomIn" style="position:absolute;left:-9999px">Código de sala</label>
-    <input id="roomIn" maxlength="8" placeholder="Código de sala" autocapitalize="characters" style="display:none">
+    <!-- Opciones al CREAR sala -->
+    <div id="hostOpts" class="host-opts" style="display:none">
+      <label for="roomTitle" style="position:absolute;left:-9999px">Nombre de la sala</label>
+      <input id="roomTitle" maxlength="40" placeholder="Nombre de la sala">
+      <div class="vis-row" role="group" aria-label="Visibilidad">
+        <button type="button" class="vis on" data-vis="public" id="visPublic">PÚBLICA</button>
+        <button type="button" class="vis" data-vis="private" id="visPrivate">PRIVADA 🔒</button>
+      </div>
+      <label for="roomPass" style="position:absolute;left:-9999px">Contraseña</label>
+      <input id="roomPass" maxlength="24" type="password" placeholder="Contraseña (privada)" style="display:none" autocomplete="new-password">
+      <p class="tiny" style="margin:0">Los códigos de sala se mantienen. Sin límite de jugadores.</p>
+    </div>
+
+    <!-- Browser al UNIRSE -->
+    <div id="joinOpts" class="join-opts" style="display:none">
+      <div class="server-head">
+        <span class="or" style="margin:0">Servidores</span>
+        <button type="button" class="btn sm ghost" id="refreshServers" style="max-width:140px;width:auto;flex:0">ACTUALIZAR</button>
+      </div>
+      <div class="rank-panel server-panel">
+        <ul id="serverList" class="about-list server-list"></ul>
+        <p class="tiny" id="serverEmpty" style="display:none;margin:8px 0">No hay salas abiertas.</p>
+      </div>
+      <label for="roomIn" style="position:absolute;left:-9999px">Código de sala</label>
+      <input id="roomIn" maxlength="8" placeholder="O escribe el código" autocapitalize="characters">
+      <label for="joinPass" style="position:absolute;left:-9999px">Contraseña de sala</label>
+      <input id="joinPass" maxlength="24" type="password" placeholder="Contraseña si es privada" autocomplete="current-password">
+    </div>
 
     <label for="codeIn" style="position:absolute;left:-9999px">Código de cartilla opcional</label>
     <input id="codeIn" maxlength="14" placeholder="¿Código de cartilla? (opcional)" autocapitalize="characters">
@@ -98,7 +126,9 @@
 <!-- PANTALLA: LOBBY -->
 <main id="lobby" class="screen">
   <div class="wrap stack">
-    <h2>SALA <span id="lobbyCode" class="lobby-code">-----</span></h2>
+    <h2 id="lobbyTitle">SALA</h2>
+    <p class="lobby-code" id="lobbyCode">-----</p>
+    <p class="or" id="lobbyMeta"></p>
     <p class="or" id="lobbyStatus">Esperando jugadores…</p>
     <button class="btn sm" id="copyRoom" style="max-width:280px">COPIAR CÓDIGO</button>
     <div class="rank-panel lobby-list">
@@ -108,6 +138,19 @@
     <button class="btn" id="lobbyStart" style="display:none">¡EMPEZAR PARTIDA!</button>
     <p class="tiny" id="lobbyWaitHost" style="display:none">Espera a que el anfitrión inicie</p>
     <button class="btn ghost" id="lobbyLeave">SALIR DE LA SALA</button>
+    <div class="chat-dock" id="chatDockLobby">
+      <div class="chat-head">
+        <span>CHAT DE SALA</span>
+        <span class="chat-talk" id="talkHintLobby"></span>
+      </div>
+      <div class="chat-log" id="chatLogLobby" aria-live="polite"></div>
+      <div class="chat-row">
+        <input id="chatInLobby" maxlength="240" placeholder="Escribe un mensaje…" autocomplete="off">
+        <button type="button" class="btn sm" id="chatSendLobby">ENVIAR</button>
+      </div>
+      <button type="button" class="mic-btn" id="micLobby" aria-label="Mantén para hablar">🎤 MANTÉN PARA HABLAR</button>
+      <p class="tiny chat-tip">Mantén el mic: se prende tu micro y los demás te oyen.</p>
+    </div>
   </div>
 </main>
 
@@ -137,6 +180,18 @@
     <div class="row">
       <button class="btn sm" id="endMatch">FINALIZAR</button>
       <button class="btn sm ghost" id="toHub">VOLVER AL INICIO</button>
+    </div>
+    <div class="chat-dock" id="chatDockGame" style="display:none">
+      <div class="chat-head">
+        <span>CHAT</span>
+        <span class="chat-talk" id="talkHintGame"></span>
+      </div>
+      <div class="chat-log" id="chatLogGame" aria-live="polite"></div>
+      <div class="chat-row">
+        <input id="chatInGame" maxlength="240" placeholder="Mensaje…" autocomplete="off">
+        <button type="button" class="btn sm" id="chatSendGame">ENVIAR</button>
+      </div>
+      <button type="button" class="mic-btn" id="micGame" aria-label="Mantén para hablar">🎤 MANTÉN PARA HABLAR</button>
     </div>
   </div>
 </main>
@@ -212,7 +267,9 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/js/config.js"></script>
 <script src="/js/multiplayer.js"></script>
+<script src="/js/chat.js"></script>
 <script src="/js/changelog.js"></script>
+<script src="/js/updater.js"></script>
 <script src="/js/app.js"></script>
 </body>
 </html>

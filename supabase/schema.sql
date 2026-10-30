@@ -9,6 +9,9 @@ create table if not exists public.rooms (
   size int not null check (size between 3 and 5),
   status text not null default 'lobby' check (status in ('lobby','live','ended')),
   host_client_id text not null,
+  title text not null default 'Sala',
+  is_private boolean not null default false,
+  password text,
   created_at timestamptz not null default now()
 );
 
@@ -127,3 +130,13 @@ create policy match_archives_select on public.match_archives
 create policy match_archives_insert on public.match_archives
   for insert to anon, authenticated with check (true);
 create index if not exists match_archives_room_code_idx on public.match_archives(room_code);
+
+-- Lista de servidores sin exponer password
+create or replace view public.rooms_lobby
+with (security_invoker = true) as
+select
+  r.id, r.code, r.size, r.status, r.title, r.is_private, r.created_at, r.host_client_id,
+  (select count(*)::int from public.players p where p.room_id = r.id) as player_count
+from public.rooms r
+where r.status in ('lobby', 'live');
+grant select on public.rooms_lobby to anon, authenticated;

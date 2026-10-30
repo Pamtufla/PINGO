@@ -3,7 +3,9 @@
    git log --pretty=format:"%h|%ad|%an|%s" --date=short
 */
 window.PINGO_ABOUT = {
-  version: '93cccee',
+  appVersion: '1.2.0',   // versión lógica de la app (semver)
+  apkVersion: '1.2.0',   // versión del APK empaquetado (súbela al generar APK nuevo)
+  version: '0dbed3e',    // build / commit
   app: 'Pingo de Halloween',
   year: '2026',
   credits: [
