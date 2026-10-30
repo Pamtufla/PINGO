@@ -1,11 +1,11 @@
 {
-  "version": "1.2.5",
-  "apkVersion": "1.2.5",
-  "iosVersion": "1.2.5",
-  "build": "647c176",
+  "version": "1.2.6",
+  "apkVersion": "1.2.6",
+  "iosVersion": "1.2.6",
+  "build": "337254c",
   "force": false,
-  "apkUrl": "https://github.com/Pamtufla/PINGO/releases/download/v1.2.5/pingo.apk",
-  "sha256": "e25d41d176b568150b3318a7b9bafd2ec9bed136aa43dd93c0b26bd3a6bec7cb",
-  "notes": "mejora de minijuegos w",
+  "apkUrl": "https://github.com/Pamtufla/PINGO/releases/download/v1.2.6/pingo.apk",
+  "sha256": "23d087ee36db198dd9efee8ffbb4c7ae4de85cc1a188ae9fda27113999bf36d4",
+  "notes": "Merge branch 'main' of https://github.com/Pamtufla/PINGO",
   "iosInstall": "safari-home"
 }
